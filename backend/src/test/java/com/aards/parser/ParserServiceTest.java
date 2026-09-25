@@ -51,6 +51,22 @@ class ParserServiceTest {
     }
 
     @Test
+    void parsePracticalRowWithZeroGrade() {
+        String text =
+                "PRN: 72332766B Seat No.: F190890003 NAME: RAHUL SHARMA Mother- SUNITA\n"
+                + "SEMESTER: 1\n"
+                + "101011- 1_ PR  ---  ---  P 023  ---  ---  023  1  1  0  10  10\n";
+        List<ParsedRecord> records = parserService.parseText(text);
+
+        assertEquals(1, records.size());
+        assertEquals(1, records.get(0).getMarks().size());
+        SubjectMark mark = records.get(0).getMarks().get(0);
+        assertEquals(23.0, mark.getMarksObtained());
+        assertEquals("O", mark.getGrade());
+        assertEquals("PASS", mark.getStatus());
+    }
+
+    @Test
     void parseLedgerPdf() throws Exception {
         byte[] pdfBytes;
         try (PDDocument doc = new PDDocument();

@@ -194,6 +194,11 @@ public class ParserService {
             if (head.length > 0 && head[0].matches("\\d+(_(PR|TW))?")) {
                 suffix = "-" + head[0];
                 used = 1;
+            } else if (head.length > 1 && head[0].matches("\\d+_")
+                    && head[1].matches("(PR|TW)")) {
+                // Split suffix like "1_ PR" -> "-1_PR".
+                suffix = "-" + head[0].replace("_", "") + "_" + head[1];
+                used = 2;
             } else if (head.length > 0 && head[0].matches("(PR|TW)")) {
                 suffix = "_" + head[0];
                 used = 1;
@@ -205,8 +210,9 @@ public class ParserService {
 
         // Tail columns: Total, Credits, CreditsEarned, Grade, GradePoints, CreditPoints.
         // An extra FFF marker can sit between Total and Credits on fail rows.
+        // Practical rows use digit "0" as grade (really letter O = Outstanding).
         Matcher tail = Pattern.compile(
-                "(\\d+)\\s+(?:FFF\\s+)?(\\d+)\\s+(\\d+)\\s+(O|A\\+|A|B\\+|B|C|P|F|FFF)\\s+(\\d+)\\s+(\\d+)$")
+                "(\\d+)\\s+(?:FFF\\s+)?(\\d+)\\s+(\\d+)\\s+(O|0|A\\+|A|B\\+|B|C|P|F|FFF)\\s+(\\d+)\\s+(\\d+)$")
                 .matcher(rest);
         if (!tail.find()) {
             // No tail (e.g. absent row with "AC"): skip marks, mark absent.
@@ -221,6 +227,9 @@ public class ParserService {
                     .build();
         }
         String grade = tail.group(4);
+        if ("0".equals(grade)) {
+            grade = "O";
+        }
         String status = "PASS";
         if ("F".equals(grade) || "FFF".equals(grade)) {
             status = "FAIL";
