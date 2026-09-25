@@ -29,11 +29,18 @@ npm run build          # production build in dist/
 |---|---|---|
 | `/login` | public | Login |
 | `/dashboard` | all roles | Dashboard (placeholder, real charts in Step 6) |
-| `/upload` | FACULTY, ADMIN | Coming in Step 5 |
-| `/validation/:batchId` | FACULTY, ADMIN | Coming in Step 5 |
+| `/upload` | FACULTY, ADMIN | Upload result PDF + recent uploads |
+| `/validation/:batchId` | FACULTY, ADMIN | Fix errors, approve batch |
 | `/admin/users` | ADMIN | Manage users |
 | `/admin/departments` | ADMIN | Manage departments |
 | `/admin/subjects` | ADMIN | Manage subjects |
+
+## Upload + validation flow
+
+1. Faculty opens `/upload`, drops a PDF (max 20MB) and clicks Upload.
+2. `VALIDATED` → records saved, go to dashboard. `PARSED` → review at
+   `/validation/:batchId`: fix each row (Save), then Approve All & Finalize
+   to save data and generate analytics.
 
 ## Structure
 
