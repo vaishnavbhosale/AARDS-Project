@@ -67,6 +67,33 @@ class ParserServiceTest {
     }
 
     @Test
+    void subjectRowsKeepTheirOwnSemester() {
+        String text =
+                "PRN: 72332766B Seat No.: F190890003 NAME: RAHUL SHARMA Mother- SUNITA\n"
+                + "SEMESTER: 1\n"
+                + "101011- 1  P 014  P 028  ---  ---  ---  ---  042  3  3  P  4  12\n"
+                + "103004- 1  P 001  * 005  ---  ---  ---  ---  006  FFF  3  0  F  0  0\n"
+                + "First Semester SGPA : 7.14 Credits Earned/Total : 22/22 Total Credit Points: 157\n"
+                + "SEMESTER: 2\n"
+                + "201001- 2  P 020  P 030  ---  ---  ---  ---  050  3  3  P  4  12\n"
+                + "202002- 2  P 015  P 025  ---  ---  ---  ---  040  3  3  B  8  24\n"
+                + "Second Semester SGPA : 8.00 Credits Earned/Total : 22/22 Total Credit Points: 176\n"
+                + "First Year Total Credits Earned : 44/44";
+        List<ParsedRecord> records = parserService.parseText(text);
+
+        assertEquals(1, records.size());
+        ParsedRecord record = records.get(0);
+        assertEquals(4, record.getMarks().size());
+        assertEquals(1, record.getMarks().get(0).getSemester());
+        assertEquals(1, record.getMarks().get(1).getSemester());
+        assertEquals(2, record.getMarks().get(2).getSemester());
+        assertEquals(2, record.getMarks().get(3).getSemester());
+        assertEquals(2, record.getSemesters().size());
+        assertEquals(7.14, record.getSemesters().get(0).getSgpa());
+        assertEquals(8.00, record.getSemesters().get(1).getSgpa());
+    }
+
+    @Test
     void parseLedgerPdf() throws Exception {
         byte[] pdfBytes;
         try (PDDocument doc = new PDDocument();

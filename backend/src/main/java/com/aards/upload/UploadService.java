@@ -30,7 +30,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 // The "Orchestrator". One method runs the full pipeline:
 // save file -> parse -> validate -> save to DB.
@@ -229,11 +232,28 @@ public class UploadService {
     // Save each parsed student with their subject marks + semester summary.
     // Every row is tagged with the faculty department + active session so the
     // dashboard can find it. Re-uploading the same PRN updates, never duplicates.
+    // Each subject row carries its own semester, so one record can span semesters.
     private void saveParsedData(List<ParsedRecord> records, UploadBatch batch,
                                 Long departmentId, AcademicSession session) {
         int currentYear = LocalDateTime.now().getYear();
 
         for (ParsedRecord record : records) {
+            // Group subject rows by their own semester. A row before any
+            // SEMESTER line falls back to the record default.
+            Map<Integer, List<SubjectMark>> bySemester = new LinkedHashMap<>();
+            for (SubjectMark mark : record.getMarks()) {
+                int sem = mark.getSemester() == null ? record.getSemester() : mark.getSemester();
+                bySemester.computeIfAbsent(sem, k -> new ArrayList<>()).add(mark);
+            }
+            if (bySemester.isEmpty()) {
+                bySemester.put(record.getSemester(), new ArrayList<>());
+            }
+
+            // Student row follows the latest semester found in the record.
+            int latestSemester = bySemester.keySet().stream()
+                    .mapToInt(Integer::intValue).max().orElse(record.getSemester());
+            int latestYear = (latestSemester + 1) / 2;
+
             Student student = studentRepository.findByPrn(record.getPrn())
                     .orElseGet(() -> Student.builder()
                             .prn(record.getPrn())
@@ -242,54 +262,59 @@ public class UploadService {
             student.setFullName(record.getName());
             student.setRollNumber(record.getRollNumber());
             student.setDepartmentId(departmentId);
-            student.setCurrentYear(record.getYear());
-            student.setCurrentSemester(record.getSemester());
-            student.setAdmissionYear(currentYear - (record.getYear() - 1));
+            student.setCurrentYear(latestYear);
+            student.setCurrentSemester(latestSemester);
+            student.setAdmissionYear(currentYear - (latestYear - 1));
             final Student savedStudent = studentRepository.save(student);
 
-            int backlogs = 0;
+            // One Result per subject row + one SemesterResult per semester.
+            for (Map.Entry<Integer, List<SubjectMark>> entry : bySemester.entrySet()) {
+                int sem = entry.getKey();
+                int year = (sem + 1) / 2;
+                int backlogs = 0;
 
-            for (SubjectMark mark : record.getMarks()) {
-                Subject subject = findOrCreateSubject(mark, departmentId,
-                        record.getYear(), record.getSemester());
-                double obtained = mark.getMarksObtained() == null ? 0 : mark.getMarksObtained();
-                double max = mark.getMaxMarks() == null ? 100 : mark.getMaxMarks();
-                boolean pass = obtained >= 0.4 * max;
-                if (isFailGrade(mark.getGrade())) {
-                    backlogs++;
+                for (SubjectMark mark : entry.getValue()) {
+                    Subject subject = findOrCreateSubject(mark, departmentId, year, sem);
+                    double obtained = mark.getMarksObtained() == null ? 0 : mark.getMarksObtained();
+                    double max = mark.getMaxMarks() == null ? 100 : mark.getMaxMarks();
+                    boolean pass = obtained >= 0.4 * max;
+                    if (isFailGrade(mark.getGrade())) {
+                        backlogs++;
+                    }
+
+                    Result result = Result.builder()
+                            .student(savedStudent)
+                            .subject(subject)
+                            .academicSession(session)
+                            .year(year)
+                            .semester(sem)
+                            .marksObtained(obtained)
+                            .grade(mark.getGrade())
+                            .status(pass ? ResultStatus.PASS : ResultStatus.FAIL)
+                            .backlog(!pass)
+                            .build();
+                    resultRepository.save(result);
                 }
 
-                Result result = Result.builder()
-                        .student(savedStudent)
-                        .subject(subject)
-                        .academicSession(session)
-                        .year(record.getYear())
-                        .semester(record.getSemester())
-                        .marksObtained(obtained)
-                        .grade(mark.getGrade())
-                        .status(pass ? ResultStatus.PASS : ResultStatus.FAIL)
-                        .backlog(!pass)
-                        .build();
-                resultRepository.save(result);
+                // SGPA printed in the ledger for this semester, or null if none.
+                final Double finalSgpa = extractSgpa(record, sem);
+                final int finalBacklogs = backlogs;
+                final int finalYear = year;
+                final int finalSem = sem;
+                SemesterResult semesterResult = semesterResultRepository
+                        .findByStudentIdAndAcademicSessionIdAndYearAndSemester(
+                                savedStudent.getId(), session.getId(), finalYear, finalSem)
+                        .orElseGet(() -> SemesterResult.builder()
+                                .studentId(savedStudent.getId())
+                                .academicSessionId(session.getId())
+                                .year(finalYear)
+                                .semester(finalSem)
+                                .build());
+                semesterResult.setSgpa(finalSgpa);
+                semesterResult.setBacklogCount(finalBacklogs);
+                semesterResult.setStatus(finalBacklogs == 0 ? SemesterStatus.PASS : SemesterStatus.FAIL);
+                semesterResultRepository.save(semesterResult);
             }
-
-            // SGPA printed in the ledger, or null when the parser found none.
-            final Double finalSgpa = extractSgpa(record);
-            final int finalBacklogs = backlogs;
-            SemesterResult semesterResult = semesterResultRepository
-                    .findByStudentIdAndAcademicSessionIdAndYearAndSemester(
-                            savedStudent.getId(), session.getId(),
-                            record.getYear(), record.getSemester())
-                    .orElseGet(() -> SemesterResult.builder()
-                            .studentId(savedStudent.getId())
-                            .academicSessionId(session.getId())
-                            .year(record.getYear())
-                            .semester(record.getSemester())
-                            .build());
-            semesterResult.setSgpa(finalSgpa);
-            semesterResult.setBacklogCount(finalBacklogs);
-            semesterResult.setStatus(finalBacklogs == 0 ? SemesterStatus.PASS : SemesterStatus.FAIL);
-            semesterResultRepository.save(semesterResult);
         }
         log.info("Saved {} student records with results", records.size());
     }
@@ -299,13 +324,13 @@ public class UploadService {
         return "F".equalsIgnoreCase(grade) || "FFF".equalsIgnoreCase(grade);
     }
 
-    // SGPA printed on the ledger SGPA line for this semester, if any.
-    private Double extractSgpa(ParsedRecord record) {
+    // SGPA printed on the ledger SGPA line for the given semester, if any.
+    private Double extractSgpa(ParsedRecord record, int semester) {
         if (record.getSemesters() == null) {
             return null;
         }
         for (SemesterSummary summary : record.getSemesters()) {
-            if (summary.getSemester() == record.getSemester()) {
+            if (summary.getSemester() == semester) {
                 return summary.getSgpa();
             }
         }

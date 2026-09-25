@@ -61,9 +61,13 @@ public class AnalyticsService {
                 filter.getYear(), filter.getSemester());
 
         // a. All semester rows for session+year+sem, then keep only this department's students.
+        log.info("Dashboard query: sessionId={}, deptId={}, year={}, semester={}",
+                filter.getAcademicSessionId(), filter.getDepartmentId(),
+                filter.getYear(), filter.getSemester());
         List<SemesterResult> all = semesterResultRepository
                 .findByAcademicSessionIdAndYearAndSemester(
                         filter.getAcademicSessionId(), filter.getYear(), filter.getSemester());
+        log.info("Found {} semester results for query", all.size());
         Set<Long> deptStudentIds = studentRepository
                 .findByDepartmentId(filter.getDepartmentId())
                 .stream().map(Student::getId).collect(Collectors.toSet());
@@ -73,6 +77,9 @@ public class AnalyticsService {
 
         // b. No data yet: return zeros, not an error.
         if (rows.isEmpty()) {
+            log.warn("No data found for filter: sessionId={}, deptId={}, year={}, semester={}",
+                    filter.getAcademicSessionId(), filter.getDepartmentId(),
+                    filter.getYear(), filter.getSemester());
             log.info("No semester results for filter, returning empty dashboard");
             return DashboardResponse.builder()
                     .cards(new CardsDto())

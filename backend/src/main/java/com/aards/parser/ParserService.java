@@ -101,6 +101,8 @@ public class ParserService {
             return records;
         }
         ParsedRecord current = null;
+        // Semester section we are currently reading. Reset for each student.
+        Integer currentSemester = null;
 
         for (String rawLine : text.split("\\r?\\n")) {
             String line = rawLine.trim();
@@ -119,6 +121,7 @@ public class ParserService {
                         .semester(1)
                         .overallResult("UNKNOWN")
                         .build();
+                currentSemester = null;
                 records.add(current);
                 continue;
             }
@@ -127,20 +130,21 @@ public class ParserService {
             }
             Matcher semMatcher = SEMESTER_REGEX.matcher(line);
             if (semMatcher.find()) {
-                int sem = parseIntOrDefault(semMatcher.group(1), current.getSemester());
-                current.setSemester(sem);
-                current.setYear((sem + 1) / 2);
+                currentSemester = parseIntOrDefault(semMatcher.group(1),
+                        currentSemester == null ? current.getSemester() : currentSemester);
                 continue;
             }
             SubjectMark mark = tryParseSubjectRow(line);
             if (mark != null) {
+                // Tag the row itself. The record's top-level semester is left alone.
+                mark.setSemester(currentSemester);
                 current.getMarks().add(mark);
                 continue;
             }
             Matcher sgpaMatcher = SGPA_REGEX.matcher(line);
             if (sgpaMatcher.find()) {
                 current.getSemesters().add(SemesterSummary.builder()
-                        .semester(current.getSemester())
+                        .semester(currentSemester == null ? current.getSemester() : currentSemester)
                         .sgpa(parseDoubleOrNull(sgpaMatcher.group(2)))
                         .creditsEarned(parseIntOrNull(extractGroup(CREDITS_REGEX, line, 1)))
                         .totalCredits(parseIntOrNull(extractGroup(CREDITS_REGEX, line, 2)))

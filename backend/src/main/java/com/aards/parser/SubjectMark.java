@@ -18,4 +18,6 @@ public class SubjectMark {
     private Double maxMarks;
     private String grade;
     private String status;
+    // Which semester section this row appeared under. Null when no SEMESTER line seen yet.
+    private Integer semester;
 }
