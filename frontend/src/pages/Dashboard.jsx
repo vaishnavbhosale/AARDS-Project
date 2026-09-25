@@ -10,7 +10,7 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-import dashboardService from '../services/dashboardService';
+import dashboardService, { downloadBlob } from '../services/dashboardService';
 import Button from '../components/Button';
 import Select from '../components/Select';
 import Card from '../components/Card';
@@ -85,6 +85,53 @@ export default function Dashboard() {
   const [dashboard, setDashboard] = useState(null);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [dashboardError, setDashboardError] = useState('');
+
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [reportError, setReportError] = useState('');
+  const [downloadingSubjectId, setDownloadingSubjectId] = useState(null);
+
+  function currentFilters() {
+    return {
+      sessionId: selected.sessionId,
+      departmentId: selected.departmentId,
+      year: Number(selected.year),
+      semester: Number(selected.semester),
+    };
+  }
+
+  async function handleDownloadDepartment() {
+    if (!selected.sessionId || !selected.departmentId || generatingReport) return;
+    setGeneratingReport(true);
+    setReportError('');
+    try {
+      const blob = await dashboardService.downloadDepartmentReport(currentFilters());
+      downloadBlob(
+        blob,
+        `department-report-${selected.sessionId}-${selected.departmentId}-${selected.year}-${selected.semester}.pdf`
+      );
+    } catch (err) {
+      setReportError(getErrorMessage(err, 'Failed to generate report.'));
+    } finally {
+      setGeneratingReport(false);
+    }
+  }
+
+  async function handleDownloadSubject(subject) {
+    if (downloadingSubjectId) return;
+    setDownloadingSubjectId(subject.subjectId);
+    setReportError('');
+    try {
+      const blob = await dashboardService.downloadSubjectReport(
+        subject.subjectId,
+        currentFilters()
+      );
+      downloadBlob(blob, `subject-report-${subject.subjectCode}.pdf`);
+    } catch (err) {
+      setReportError(getErrorMessage(err, 'Failed to generate report.'));
+    } finally {
+      setDownloadingSubjectId(null);
+    }
+  }
 
   async function loadDashboard(params) {
     if (!params.sessionId || !params.departmentId) return;
@@ -325,16 +372,28 @@ export default function Dashboard() {
               ).map((s) => ({ value: String(s), label: `Sem ${s}` }))}
             />
           </div>
-          <div className="flex gap-2 mt-3">
-            <Button onClick={handleApply} loading={loadingDashboard}>
-              Apply Filters
-            </Button>
-            <Button variant="secondary" onClick={handleReset}>
-              Reset
+          <div className="flex gap-2 mt-3 justify-between flex-wrap">
+            <div className="flex gap-2">
+              <Button onClick={handleApply} loading={loadingDashboard}>
+                Apply Filters
+              </Button>
+              <Button variant="secondary" onClick={handleReset}>
+                Reset
+              </Button>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={handleDownloadDepartment}
+              loading={generatingReport}
+              disabled={generatingReport}
+            >
+              {generatingReport ? 'Generating...' : 'Download Department Report'}
             </Button>
           </div>
         </Card>
       )}
+
+      {reportError && <Alert type="error">{reportError}</Alert>}
 
       {dashboardError && <Alert type="error">{dashboardError}</Alert>}
 
@@ -424,10 +483,12 @@ export default function Dashboard() {
                     'Passed',
                     'Failed',
                     'Pass %',
+                    'Action',
                   ]}
                 >
                   {subjects.map((s) => {
                     const percent = Number(s.passPercentage || 0);
+                    const downloading = downloadingSubjectId === s.subjectId;
                     return (
                       <tr key={s.subjectId || s.subjectCode} className="border-b last:border-0">
                         <td className="py-2 pr-4">{s.subjectCode}</td>
@@ -447,6 +508,15 @@ export default function Dashboard() {
                               {formatPercent(percent)}
                             </span>
                           </div>
+                        </td>
+                        <td className="py-2 pr-4">
+                          <button
+                            onClick={() => handleDownloadSubject(s)}
+                            disabled={downloading}
+                            className="text-xs text-primary-dark underline disabled:opacity-60"
+                          >
+                            {downloading ? 'Downloading...' : 'Download'}
+                          </button>
                         </td>
                       </tr>
                     );
