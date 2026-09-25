@@ -203,22 +203,29 @@ public class ParserService {
             rest = String.join(" ", Arrays.copyOfRange(head, used, head.length)).trim();
         }
 
-        String[] tokens = rest.isEmpty() ? new String[0] : rest.split("\\s+");
-        Double obtained = null;
-        String grade = null;
-        for (String token : tokens) {
-            if (token.matches("\\d+(\\.\\d+)?")) {
-                obtained = Double.parseDouble(token);
-            }
-            if (GRADE_REGEX.matcher(token).matches()) {
-                grade = token;
-            }
+        // Tail columns: Total, Credits, CreditsEarned, Grade, GradePoints, CreditPoints.
+        // An extra FFF marker can sit between Total and Credits on fail rows.
+        Matcher tail = Pattern.compile(
+                "(\\d+)\\s+(?:FFF\\s+)?(\\d+)\\s+(\\d+)\\s+(O|A\\+|A|B\\+|B|C|P|F|FFF)\\s+(\\d+)\\s+(\\d+)$")
+                .matcher(rest);
+        if (!tail.find()) {
+            // No tail (e.g. absent row with "AC"): skip marks, mark absent.
+            return SubjectMark.builder()
+                    .subjectCode(code + suffix)
+                    .subjectSuffix(suffix)
+                    .subjectName(code + suffix)
+                    .marksObtained(0.0)
+                    .maxMarks(100.0)
+                    .grade(null)
+                    .status("ABSENT")
+                    .build();
         }
+        String grade = tail.group(4);
         String status = "PASS";
         if ("F".equals(grade) || "FFF".equals(grade)) {
             status = "FAIL";
         } else {
-            for (String token : tokens) {
+            for (String token : rest.split("\\s+")) {
                 if ("AC".equals(token)) {
                     status = "ABSENT";
                     break;
@@ -229,7 +236,7 @@ public class ParserService {
                 .subjectCode(code + suffix)
                 .subjectSuffix(suffix)
                 .subjectName(code + suffix)
-                .marksObtained(obtained == null ? 0.0 : obtained)
+                .marksObtained(Double.parseDouble(tail.group(1)))
                 .maxMarks(100.0)
                 .grade(grade)
                 .status(status)

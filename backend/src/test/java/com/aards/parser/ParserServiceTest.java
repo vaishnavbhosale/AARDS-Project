@@ -24,8 +24,8 @@ class ParserServiceTest {
     private static final String LEDGER_TEXT =
             "PRN: 72332766B Seat No.: F190890003 NAME: RAHUL SHARMA Mother- SUNITA\n"
             + "SEMESTER: 1\n"
-            + "101011- 1 P 014 P 028 --- --- --- --- 042 3 3 P 4 12\n"
-            + "102003- 1 P 016 P 041 --- --- --- 057 3 3 B+ 7 21\n"
+            + "101011- 1  P 014  P 028  ---  ---  ---  ---  042  3  3  P  4  12\n"
+            + "103004- 1  P 001  * 005  ---  ---  ---  ---  006  FFF  3  0  F  0  0\n"
             + "First Semester SGPA : 7.14 Credits Earned/Total : 22/22 Total Credit Points: 157\n"
             + "First Year Total Credits Earned : 44/44";
 
@@ -39,7 +39,12 @@ class ParserServiceTest {
         assertEquals("RAHUL SHARMA", record.getName());
         assertEquals(2, record.getMarks().size());
         assertEquals("101011-1", record.getMarks().get(0).getSubjectCode());
-        assertEquals("102003-1", record.getMarks().get(1).getSubjectCode());
+        assertEquals(42.0, record.getMarks().get(0).getMarksObtained());
+        assertEquals("P", record.getMarks().get(0).getGrade());
+        assertEquals("PASS", record.getMarks().get(0).getStatus());
+        assertEquals("103004-1", record.getMarks().get(1).getSubjectCode());
+        assertEquals(6.0, record.getMarks().get(1).getMarksObtained());
+        assertEquals("FAIL", record.getMarks().get(1).getStatus());
         assertEquals(1, record.getSemesters().size());
         assertEquals(7.14, record.getSemesters().get(0).getSgpa());
         assertEquals("PASS", record.getOverallResult());
