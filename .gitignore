@@ -71,8 +71,8 @@ uploads/
 .temp/
 tmp/
 
-# Local Spring config with secrets
-backend/src/main/resources/application.properties
+# Local Spring config with secrets (application.properties itself is
+# env-var-only and IS committed so the deployed JAR has a config file)
 backend/src/main/resources/application-dev.properties
 
 # Uploaded PDFs and local uploads
