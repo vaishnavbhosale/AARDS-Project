@@ -145,3 +145,8 @@ Second Year Report, Third Year Report, Fourth Year Report.
 **In V1:** Auth, Upload PDF, PDF Parsing, Validation, Dashboard, Analytics, AI Recommendations, PDF Reports, RBAC.
 **Not in V1:** Chatbot, Student Login, Mobile App, Email Notifications, Attendance/Fee/Timetable modules,
 Multi-University Support, Predictive Analytics, Result Versioning.
+
+## Deployment
+
+Backend on Railway + PostgreSQL, frontend on Vercel.
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for step-by-step instructions.
