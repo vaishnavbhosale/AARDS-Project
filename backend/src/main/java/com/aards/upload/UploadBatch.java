@@ -43,9 +43,18 @@ public class UploadBatch {
     @Builder.Default
     private UploadStatus status = UploadStatus.UPLOADED;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pdf_type", length = 20)
+    @Builder.Default
+    private PdfType pdfType = PdfType.UNKNOWN;
+
     @Column(name = "total_records")
     @Builder.Default
     private Integer totalRecords = 0;
+
+    @Column(name = "parsed_records")
+    @Builder.Default
+    private Integer parsedRecords = 0;
 
     @Column(name = "error_records")
     @Builder.Default

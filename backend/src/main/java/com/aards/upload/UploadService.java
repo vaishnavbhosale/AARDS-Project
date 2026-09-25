@@ -16,6 +16,7 @@ import com.aards.student.StudentRepository;
 import com.aards.subject.Subject;
 import com.aards.subject.SubjectRepository;
 import com.aards.user.User;
+import com.aards.user.repository.UserRepository;
 import com.aards.validation.ValidationError;
 import com.aards.validation.ValidationErrorRepository;
 import com.aards.validation.ValidationService;
@@ -45,6 +46,7 @@ public class UploadService {
     private final ResultRepository resultRepository;
     private final SemesterResultRepository semesterResultRepository;
     private final AcademicSessionRepository sessionRepository;
+    private final UserRepository userRepository;
 
     public UploadService(FileStorageService fileStorageService,
                          ParserService parserService,
@@ -55,7 +57,8 @@ public class UploadService {
                          SubjectRepository subjectRepository,
                          ResultRepository resultRepository,
                          SemesterResultRepository semesterResultRepository,
-                         AcademicSessionRepository sessionRepository) {
+                         AcademicSessionRepository sessionRepository,
+                         UserRepository userRepository) {
         this.fileStorageService = fileStorageService;
         this.parserService = parserService;
         this.validationService = validationService;
@@ -66,62 +69,142 @@ public class UploadService {
         this.resultRepository = resultRepository;
         this.semesterResultRepository = semesterResultRepository;
         this.sessionRepository = sessionRepository;
+        this.userRepository = userRepository;
     }
 
     @Transactional
-    public UploadBatchResponse processUpload(MultipartFile file, User user) {
-        log.info("Upload started for file: {}", file.getOriginalFilename());
+    public UploadBatchResponse processUpload(MultipartFile file, User currentUser) {
+        // a. File must be a non-empty PDF
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("Uploaded file is empty");
+        }
+        String contentType = file.getContentType();
+        String originalName = file.getOriginalFilename() == null ? "result.pdf" : file.getOriginalFilename();
+        if (contentType != null && !contentType.equals("application/pdf")
+                && !originalName.toLowerCase().endsWith(".pdf")) {
+            throw new RuntimeException("Only PDF files are allowed");
+        }
 
-        // a. Save file to disk
+        // b. Save file to disk
         String path = fileStorageService.store(file);
 
-        // b. Create batch row with UPLOADED status
+        // c. Create batch row as UPLOADED with UNKNOWN type
         UploadBatch batch = UploadBatch.builder()
-                .uploadedByUserId(user == null ? null : user.getId())
-                .fileName(file.getOriginalFilename())
+                .uploadedByUserId(currentUser == null ? null : currentUser.getId())
+                .fileName(originalName)
                 .filePath(path)
                 .status(UploadStatus.UPLOADED)
+                .pdfType(PdfType.UNKNOWN)
                 .build();
         batch = batchRepository.save(batch);
 
+        // d. Log start
+        String username = currentUser == null ? "unknown" : currentUser.getUsername();
+        log.info("Upload started: {} by {}", originalName, username);
+
         try {
-            // c. Parse PDF
+            // e. Mark as PARSING
             batch.setStatus(UploadStatus.PARSING);
             batchRepository.save(batch);
+
+            // f. Parse PDF
             List<ParsedRecord> records = parserService.parse(file);
+
+            // g. Record counts
             batch.setTotalRecords(records.size());
+            batch.setParsedRecords(records.size());
 
-            // d. Validate
+            // h. PDF type is DIGITAL for now (OCR detection comes later)
+            batch.setPdfType(PdfType.DIGITAL);
+            batchRepository.save(batch);
+
+            // i. Validate parsed rows
             List<ValidationError> errors = validationService.validate(records, batch);
-            batch.setErrorRecords(errors.size());
 
-            // e. If errors, stop here. Teacher fixes them on validation screen.
+            // j. Save errors as PENDING
             if (!errors.isEmpty()) {
                 errorRepository.saveAll(errors);
-                batch.setStatus(UploadStatus.PARSED);
-                batchRepository.save(batch);
-                log.info("Upload parsed with errors: batch={}, errors={}", batch.getId(), errors.size());
-                return toResponse(batch);
             }
 
-            // f. No errors: save students + results, then analytics summary
-            saveRecords(records);
+            // k. Error count
+            batch.setErrorRecords(errors.size());
+
+            // l. Errors found: stop here, teacher fixes them on validation screen
+            if (!errors.isEmpty()) {
+                batch.setStatus(UploadStatus.PARSED);
+                batchRepository.save(batch);
+                log.info("Validation errors found: {} in batch {}", errors.size(), batch.getId());
+                return convertToResponse(batch);
+            }
+
+            // m. No errors: save students + results
+            saveParsedData(records, batch);
+
+            // n. Mark done
             batch.setStatus(UploadStatus.VALIDATED);
             batch.setCompletedAt(LocalDateTime.now());
             batchRepository.save(batch);
-            log.info("Upload completed for batch id={}", batch.getId());
-            return toResponse(batch);
+
+            // o. Log done
+            log.info("Upload completed: {}, {} records saved", originalName, records.size());
+            return convertToResponse(batch);
 
         } catch (Exception e) {
-            log.error("Upload failed for batch id={}", batch.getId(), e);
+            log.error("Upload failed for batch {}", batch.getId(), e);
             batch.setStatus(UploadStatus.FAILED);
             batchRepository.save(batch);
             throw new RuntimeException("Upload failed: " + e.getMessage(), e);
         }
     }
 
-    // Save each parsed student and their subject marks.
-    private void saveRecords(List<ParsedRecord> records) {
+    // Called after teacher fixes errors and approves the batch.
+    @Transactional
+    public UploadBatchResponse finalizeBatch(Long batchId) {
+        log.info("Finalizing batch {}", batchId);
+        UploadBatch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new RuntimeException("Upload not found: " + batchId));
+        List<ParsedRecord> records;
+        try {
+            org.springframework.core.io.Resource resource = fileStorageService.load(batch.getFilePath());
+            byte[] bytes;
+            try (java.io.InputStream in = resource.getInputStream()) {
+                bytes = in.readAllBytes();
+            }
+            records = parserService.parseBytes(bytes, batch.getFileName());
+        } catch (Exception e) {
+            log.error("Re-parse failed for batch {}", batchId, e);
+            throw new RuntimeException("Re-parse failed: " + e.getMessage(), e);
+        }
+        applyCorrections(records, batchId);
+        saveParsedData(records, batch);
+        batch.setStatus(UploadStatus.VALIDATED);
+        batch.setCompletedAt(LocalDateTime.now());
+        batchRepository.save(batch);
+        log.info("Upload completed: {}, {} records saved", batch.getFileName(), records.size());
+        return convertToResponse(batch);
+    }
+
+    // Overwrite doubtful values with teacher-approved corrections.
+    private void applyCorrections(List<ParsedRecord> records, Long batchId) {
+        List<ValidationError> approved =
+                errorRepository.findByUploadBatchIdAndStatus(
+                        batchId, com.aards.validation.ValidationStatus.APPROVED);
+        for (ValidationError error : approved) {
+            if (error.getCorrectedValue() == null) {
+                continue;
+            }
+            for (ParsedRecord record : records) {
+                if (record.getPrn() != null && record.getPrn().equals(error.getStudentPrn())) {
+                    if ("name".equalsIgnoreCase(error.getFieldName())) {
+                        record.setName(error.getCorrectedValue());
+                    }
+                }
+            }
+        }
+    }
+
+    // Save each parsed student with their subject marks + semester summary.
+    private void saveParsedData(List<ParsedRecord> records, UploadBatch batch) {
         AcademicSession session = getOrCreateSession();
 
         for (ParsedRecord record : records) {
@@ -135,6 +218,7 @@ public class UploadService {
                             .active(true)
                             .build());
             student.setFullName(record.getName());
+            student.setRollNumber(record.getRollNumber());
             student.setCurrentYear(record.getYear());
             student.setCurrentSemester(record.getSemester());
             student = studentRepository.save(student);
@@ -145,12 +229,14 @@ public class UploadService {
 
             for (SubjectMark mark : record.getMarks()) {
                 Subject subject = findOrCreateSubject(mark);
-                boolean pass = mark.getMarks() >= 0.4 * mark.getMaxMarks();
+                double obtained = mark.getMarksObtained() == null ? 0 : mark.getMarksObtained();
+                double max = mark.getMaxMarks() == null ? 100 : mark.getMaxMarks();
+                boolean pass = obtained >= 0.4 * max;
                 if (!pass) {
                     backlogs++;
                 }
-                totalObtained += mark.getMarks();
-                totalMax += mark.getMaxMarks();
+                totalObtained += obtained;
+                totalMax += max;
 
                 Result result = Result.builder()
                         .student(student)
@@ -158,7 +244,7 @@ public class UploadService {
                         .academicSession(session)
                         .year(record.getYear())
                         .semester(record.getSemester())
-                        .marksObtained(mark.getMarks())
+                        .marksObtained(obtained)
                         .grade(mark.getGrade())
                         .status(pass ? ResultStatus.PASS : ResultStatus.FAIL)
                         .backlog(!pass)
@@ -186,9 +272,9 @@ public class UploadService {
                         mark.getSubjectCode(), null, null, null)
                 .orElseGet(() -> subjectRepository.save(Subject.builder()
                         .code(mark.getSubjectCode())
-                        .name(mark.getSubjectCode())
-                        .maxMarks((int) mark.getMaxMarks())
-                        .passingMarks((int) (mark.getMaxMarks() * 0.4))
+                        .name(mark.getSubjectName() == null ? mark.getSubjectCode() : mark.getSubjectName())
+                        .maxMarks(mark.getMaxMarks() == null ? 100 : mark.getMaxMarks().intValue())
+                        .passingMarks((int) ((mark.getMaxMarks() == null ? 100 : mark.getMaxMarks()) * 0.4))
                         .credits(4)
                         .build()));
     }
@@ -202,26 +288,41 @@ public class UploadService {
     }
 
     // Manual DTO mapping so entities never go to frontend directly.
-    private UploadBatchResponse toResponse(UploadBatch batch) {
+    private UploadBatchResponse convertToResponse(UploadBatch batch) {
+        String username = null;
+        if (batch.getUploadedByUserId() != null) {
+            username = userRepository.findById(batch.getUploadedByUserId())
+                    .map(User::getUsername).orElse(null);
+        }
         return UploadBatchResponse.builder()
                 .id(batch.getId())
                 .fileName(batch.getFileName())
-                .status(batch.getStatus().name())
+                .status(batch.getStatus() == null ? null : batch.getStatus().name())
+                .pdfType(batch.getPdfType() == null ? null : batch.getPdfType().name())
                 .totalRecords(batch.getTotalRecords())
+                .parsedRecords(batch.getParsedRecords())
                 .errorRecords(batch.getErrorRecords())
+                .uploadedAt(batch.getUploadedAt())
+                .completedAt(batch.getCompletedAt())
+                .uploadedByUsername(username)
                 .build();
     }
 
     public List<UploadBatchResponse> listForUser(Long userId) {
         log.info("Listing uploads for user id={}", userId);
         return batchRepository.findByUploadedByUserIdOrderByUploadedAtDesc(userId)
-                .stream().map(this::toResponse).toList();
+                .stream().map(this::convertToResponse).toList();
+    }
+
+    public List<UploadBatchResponse> listAll() {
+        log.info("Listing all uploads");
+        return batchRepository.findAll().stream().map(this::convertToResponse).toList();
     }
 
     public UploadBatchResponse getById(Long id) {
         log.info("Fetching upload batch id={}", id);
         UploadBatch batch = batchRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Upload not found: " + id));
-        return toResponse(batch);
+                .orElseThrow(() -> new RuntimeException("Upload not found: " + id));
+        return convertToResponse(batch);
     }
 }

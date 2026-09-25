@@ -35,7 +35,7 @@ class ParserServiceTest {
         assertEquals("22222222", records.get(1).getPrn());
         assertEquals(2, records.get(0).getMarks().size());
         assertEquals(2, records.get(1).getMarks().size());
-        assertEquals(75.0, records.get(0).getMarks().get(0).getMarks());
+        assertEquals(75.0, records.get(0).getMarks().get(0).getMarksObtained());
         assertEquals("CS201", records.get(0).getMarks().get(0).getSubjectCode());
     }
 

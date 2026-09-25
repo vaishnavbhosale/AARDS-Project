@@ -36,6 +36,9 @@ public class ValidationError {
     @Column(name = "student_prn", length = 50)
     private String studentPrn;
 
+    @Column(name = "student_name", length = 150)
+    private String studentName;
+
     @Column(name = "field_name", length = 100)
     private String fieldName;
 
@@ -49,6 +52,12 @@ public class ValidationError {
     @Column(length = 20)
     @Builder.Default
     private ValidationStatus status = ValidationStatus.PENDING;
+
+    @Column(name = "reviewed_by_user_id")
+    private Long reviewedByUserId;
+
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

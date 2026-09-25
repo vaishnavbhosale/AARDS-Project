@@ -41,10 +41,13 @@ Default seed admin: `admin / admin123` (change on first login).
 
 | Method | Path | Role | Description |
 |---|---|---|---|
-| POST | `/uploads` | FACULTY | Upload class result PDF (multipart `file`) |
-| GET | `/uploads` | logged in | List batches for current user |
+| POST | `/uploads` | FACULTY | Upload class result PDF (multipart `file`, max 20MB). Returns batch with status, pdfType, counts |
+| GET | `/uploads` | logged in | List batches (own if FACULTY, all if ADMIN/HOD) |
 | GET | `/uploads/{id}` | logged in | Batch details |
-| GET | `/validation/{uploadId}` | FACULTY | List validation errors |
+| GET | `/validation/{uploadId}` | logged in | List validation errors (legacy path, same as below) |
+| GET | `/validation/batch/{batchId}` | logged in | List all errors for a batch |
+| PUT | `/validation/{errorId}` | FACULTY | Fix one error. Body: `{ correctedValue }` |
+| POST | `/validation/batch/{batchId}/approve` | FACULTY | Approve all + finalize batch (saves students/results, VALIDATED) |
 | GET | `/dashboard?session=&year=&semester=&department=` | FACULTY,HOD,PRINCIPAL | Cards, charts, subject analysis |
 | GET | `/students` | FACULTY,HOD | List parsed students |
 | GET | `/analytics?uploadId=` | FACULTY,HOD | Analytics output |

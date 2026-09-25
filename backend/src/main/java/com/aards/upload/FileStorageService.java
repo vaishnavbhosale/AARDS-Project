@@ -1,5 +1,6 @@
 package com.aards.upload;
 
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,7 +16,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 
-// Saves uploaded PDFs to disk. One job: store file, return path.
+// Saves uploaded PDFs to disk. One job: store, load, delete files.
 @Service
 public class FileStorageService {
 
@@ -25,9 +26,14 @@ public class FileStorageService {
 
     public FileStorageService(@Value("${aards.upload.dir:./uploads}") String dir) {
         this.uploadDir = Paths.get(dir).toAbsolutePath().normalize();
+    }
+
+    // Create the folder on startup so store() never fails for missing dir.
+    @PostConstruct
+    public void init() {
         try {
-            Files.createDirectories(this.uploadDir);
-            log.info("Upload directory ready: {}", this.uploadDir);
+            Files.createDirectories(uploadDir);
+            log.info("Upload directory ready: {}", uploadDir);
         } catch (IOException e) {
             log.error("Could not create upload directory", e);
             throw new RuntimeException("Could not create upload directory", e);
@@ -58,6 +64,16 @@ public class FileStorageService {
         } catch (Exception e) {
             log.error("File load failed: {}", path, e);
             throw new RuntimeException("File load failed", e);
+        }
+    }
+
+    public void delete(String path) {
+        try {
+            boolean removed = Files.deleteIfExists(Paths.get(path));
+            log.info("File deleted: {} (existed={})", path, removed);
+        } catch (IOException e) {
+            log.error("File delete failed: {}", path, e);
+            throw new RuntimeException("File delete failed", e);
         }
     }
 }
