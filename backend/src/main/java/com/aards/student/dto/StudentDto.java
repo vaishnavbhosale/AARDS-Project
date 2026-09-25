@@ -12,11 +12,11 @@ import lombok.NoArgsConstructor;
 public class StudentDto {
 
     private Long id;
-    private String seatNo;
-    private String name;
-    private String department;
-    private String academicYear;
-    private String semester;
-    private Double sgpa;
-    private String result;
+    private String prn;
+    private String rollNumber;
+    private String fullName;
+    private Long departmentId;
+    private Integer admissionYear;
+    private Integer currentYear;
+    private Integer currentSemester;
 }

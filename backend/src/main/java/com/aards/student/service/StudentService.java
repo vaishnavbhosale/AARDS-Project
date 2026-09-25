@@ -1,14 +1,15 @@
 package com.aards.student.service;
 
+import com.aards.student.StudentRepository;
 import com.aards.student.dto.StudentDto;
 import com.aards.student.mapper.StudentMapper;
-import com.aards.student.repository.StudentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+// Simple read service for students.
 @Service
 public class StudentService {
 

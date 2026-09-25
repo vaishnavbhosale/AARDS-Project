@@ -1,17 +1,17 @@
 package com.aards.validation.controller;
 
 import com.aards.common.dto.ApiResponse;
-import com.aards.validation.service.ValidationService;
+import com.aards.validation.ValidationError;
+import com.aards.validation.ValidationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Map;
 
+// Shows doubtful values so the teacher can fix them.
 @RestController
 @RequestMapping("/api/v1/validation")
 public class ValidationController {
@@ -23,14 +23,8 @@ public class ValidationController {
     }
 
     @GetMapping("/{uploadId}")
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> errors(@PathVariable Long uploadId) {
-        return ResponseEntity.ok(ApiResponse.success("Validation errors fetched",
-                validationService.getErrors(uploadId)));
-    }
-
-    @PostMapping("/{uploadId}/approve")
-    public ResponseEntity<ApiResponse<Void>> approve(@PathVariable Long uploadId) {
-        validationService.approve(uploadId);
-        return ResponseEntity.ok(ApiResponse.success("Validation approved", null));
+    public ResponseEntity<ApiResponse<List<ValidationError>>> errors(@PathVariable Long uploadId) {
+        return ResponseEntity.ok(
+                ApiResponse.success("Validation errors fetched", validationService.getErrors(uploadId)));
     }
 }

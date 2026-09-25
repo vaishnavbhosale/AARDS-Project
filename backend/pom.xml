@@ -96,6 +96,13 @@
             <version>${tess4j.version}</version>
         </dependency>
 
+        <!-- H2 for tests (so mvn test works without PostgreSQL) -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Tests -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

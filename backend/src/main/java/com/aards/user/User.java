@@ -7,19 +7,20 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Getter;
+import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.time.LocalDateTime;
 
+// Simple User table. Roles decide what each person can do.
 @Entity
 @Table(name = "users")
-@Getter
-@Setter
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -35,13 +36,18 @@ public class User {
     @Column(nullable = false)
     private String password;
 
+    @Column(length = 150)
+    private String fullName;
+
+    @Column(length = 150)
+    private String email;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Role role;
 
-    @Column(length = 150)
-    private String fullName;
-
+    // Keep department as simple text so viva explanation stays easy.
+    // Example: "Computer", "IT", "E&TC"
     @Column(length = 100)
     private String department;
 
@@ -51,4 +57,18 @@ public class User {
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    public void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    public void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 }
