@@ -1,12 +1,14 @@
 import axios from 'axios';
 
+// Base URL comes from .env file, falls back to local backend.
 const api = axios.create({
-  baseURL: 'http://localhost:8080/api/v1',
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
+// Attach JWT token to every request.
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('aards_token');
   if (token) {
@@ -14,5 +16,20 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// On 401 the token is bad or expired: clear login and go to /login.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('aards_token');
+      localStorage.removeItem('aards_user');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default api;
