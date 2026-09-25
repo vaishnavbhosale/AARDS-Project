@@ -28,7 +28,19 @@ npm run build          # production build in dist/
 | Path | Who | Page |
 |---|---|---|
 | `/login` | public | Login |
-| `/dashboard` | all roles | Dashboard (placeholder, real charts in Step 6) |
+| `/dashboard` | all roles | Dashboard: filters + 10 stat cards + topper + 3 Chart.js charts + subject table |
+
+## Dashboard
+
+- Filter bar (session, department, year, semester) loads options from
+  `GET /dashboard/filters`, auto-loads with the first available values,
+  `Apply Filters` reloads and `Reset` restores defaults.
+- Data comes from `GET /dashboard` via `src/services/dashboardService.js`.
+- Shows 10 stat cards (Passed = green, Failed = red, rest = blue), a full-width
+  topper card, Chart.js bar/doughnut/bar charts (subject pass vs fail %,
+  backlog 0/1/2/3+, grades O–F), a subject table with colored pass-% bars,
+  and a grayed-out "AI Recommendations" placeholder (coming in Half 2).
+- Empty state when 0 students: prompts to upload a PDF or change filters.
 | `/upload` | FACULTY, ADMIN | Upload result PDF + recent uploads |
 | `/validation/:batchId` | FACULTY, ADMIN | Fix errors, approve batch |
 | `/admin/users` | ADMIN | Manage users |
