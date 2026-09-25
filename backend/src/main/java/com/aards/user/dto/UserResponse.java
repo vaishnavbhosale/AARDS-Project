@@ -1,4 +1,4 @@
-package com.aards.auth.dto;
+package com.aards.user.dto;
 
 import com.aards.user.Role;
 import lombok.AllArgsConstructor;
@@ -6,16 +6,18 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-// What frontend gets after login. Token is used for next requests.
+// Safe user view for frontend. Never includes password.
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class LoginResponse {
+public class UserResponse {
 
-    private String token;
+    private Long id;
     private String username;
     private String fullName;
+    private String email;
     private Role role;
     private Long departmentId;
+    private boolean active;
 }

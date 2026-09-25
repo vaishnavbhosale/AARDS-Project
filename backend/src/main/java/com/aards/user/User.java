@@ -17,7 +17,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
-// Simple User table. Roles decide what each person can do.
+// One row per login user. Role decides what they can do.
 @Entity
 @Table(name = "users")
 @Data
@@ -36,24 +36,23 @@ public class User {
     @Column(nullable = false)
     private String password;
 
-    @Column(length = 150)
+    @Column(nullable = false, length = 150)
     private String fullName;
 
-    @Column(length = 150)
+    @Column(unique = true, length = 150)
     private String email;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Role role;
 
-    // Keep department as simple text so viva explanation stays easy.
-    // Example: "Computer", "IT", "E&TC"
-    @Column(length = 100)
-    private String department;
+    // Simple link to departments table. Null means no department (e.g. admin).
+    @Column(name = "department_id")
+    private Long departmentId;
 
     @Column(nullable = false)
     @Builder.Default
-    private boolean enabled = true;
+    private boolean active = true;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
@@ -65,6 +64,7 @@ public class User {
     public void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+        active = true;
     }
 
     @PreUpdate

@@ -4,6 +4,7 @@ import com.aards.user.User;
 import com.aards.user.dto.UserDto;
 import org.springframework.stereotype.Component;
 
+// Converts User entity to DTO manually so passwords never go out.
 @Component
 public class UserMapper {
 
@@ -14,10 +15,11 @@ public class UserMapper {
         return UserDto.builder()
                 .id(entity.getId())
                 .username(entity.getUsername())
-                .role(entity.getRole())
                 .fullName(entity.getFullName())
-                .department(entity.getDepartment())
-                .enabled(entity.isEnabled())
+                .email(entity.getEmail())
+                .role(entity.getRole())
+                .departmentId(entity.getDepartmentId())
+                .active(entity.isActive())
                 .build();
     }
 }
