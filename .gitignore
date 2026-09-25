@@ -1,0 +1,72 @@
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+.mvn/
+mvnw
+mvnw.cmd
+
+# Spring Boot
+spring-shell.log
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+*.local
+
+# Vite
+vite.config.js.timestamp-*
+
+# Env files (keep .example, ignore real secrets)
+.env
+.env.local
+.env.*.local
+backend/src/main/resources/application-local.properties
+frontend/.env.local
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+*.code-workspace
+.DS_Store
+Thumbs.db
+
+# Git
+*.orig
+*.rej
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# PostgreSQL / DB dumps
+*.sql.dump
+*.backup
+
+# Uploads / PDFs (keep sample-pdfs, ignore real uploads)
+uploads/
+!sample-pdfs/.gitkeep
+
+# Misc
+.cache/
+.temp/
+tmp/
