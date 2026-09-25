@@ -12,7 +12,9 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -31,6 +33,11 @@ public class ParserService {
     private static final String RESULT_PATTERN = "First Year (?:Result\\s*:\\s*(Pass|Fail)|Total\\s+Credits\\s+Earned)";
     private static final String GRADE_PATTERN = "\\b(O|A\\+|A|B\\+|B|C|P|F|FFF)\\b";
     private static final String TOTAL_POINTS_PATTERN = "Total Credit Points\\s*:\\s*(\\d+)";
+    // First-page subject list: code, optional suffix, repeated code, title.
+    // e.g. "101011- 1 PR 101011 Engineering Mechanics".
+    private static final String SUBJECT_LIST_PATTERN =
+            "^(\\d{6})(.*?)\\b\\1\\b\\s*(?:[-_]\\s*(?:\\d|PR|TW)\\s*|_\\s*(?:PR|TW)\\s*)*(.+)$";
+    private static final String LIST_SEMESTER_PATTERN = "(?i)semester\\s*:\\s*(\\d+)";
 
     private static final Pattern PRN_LINE_REGEX = Pattern.compile(PRN_LINE_PATTERN);
     private static final Pattern SEMESTER_REGEX = Pattern.compile(SEMESTER_PATTERN);
@@ -40,6 +47,8 @@ public class ParserService {
     private static final Pattern RESULT_REGEX = Pattern.compile(RESULT_PATTERN);
     private static final Pattern GRADE_REGEX = Pattern.compile("^" + GRADE_PATTERN + "$");
     private static final Pattern TOTAL_POINTS_REGEX = Pattern.compile(TOTAL_POINTS_PATTERN);
+    private static final Pattern SUBJECT_LIST_REGEX = Pattern.compile(SUBJECT_LIST_PATTERN);
+    private static final Pattern LIST_SEMESTER_REGEX = Pattern.compile(LIST_SEMESTER_PATTERN);
 
     private final OcrService ocrService;
 
@@ -160,6 +169,66 @@ public class ParserService {
             }
         }
         return records;
+    }
+
+    // Raw PDF text for helpers (e.g. the subject-name list). Plain PDFBox,
+    // no OCR. Used by UploadService alongside parse().
+    public String extractFullText(byte[] pdfBytes) throws IOException {
+        try (PDDocument doc = PDDocument.load(pdfBytes)) {
+            return new PDFTextStripper().getText(doc);
+        }
+    }
+
+    // Subject list from the ledger's first page: code ("101011-1") -> title
+    // ("Engineering Mechanics"). Header and non-matching lines are skipped.
+    public Map<String, String> extractSubjectNames(String fullText) {
+        Map<String, String> names = new LinkedHashMap<>();
+        if (fullText == null) {
+            return names;
+        }
+        Integer listSemester = null;
+        for (String rawLine : fullText.split("\\r?\\n")) {
+            String line = rawLine.trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            Matcher semMatcher = LIST_SEMESTER_REGEX.matcher(line);
+            if (semMatcher.find()) {
+                listSemester = parseIntOrNull(semMatcher.group(1));
+                continue;
+            }
+            String lower = line.toLowerCase();
+            if (lower.contains("code") && lower.contains("paper") && lower.contains("title")) {
+                continue;
+            }
+            Matcher m = SUBJECT_LIST_REGEX.matcher(line);
+            if (!m.matches()) {
+                continue;
+            }
+            String title = m.group(3).trim();
+            if (title.isEmpty()) {
+                continue;
+            }
+            String key = m.group(1) + normalizeListSuffix(m.group(2));
+            names.putIfAbsent(key, title);
+        }
+        log.info("Extracted {} subject names from list page (semester {})",
+                names.size(), listSemester);
+        return names;
+    }
+
+    // Suffix junk between the two codes, canonicalized: "- 1" -> "-1",
+    // "- 1 PR" -> "-1_PR", "_TW" stays "_TW", "" stays "".
+    private String normalizeListSuffix(String middle) {
+        String s = middle.replaceAll("\\s+", "").toUpperCase();
+        if (s.isEmpty()) {
+            return "";
+        }
+        Matcher m = Pattern.compile("^(-\\d+)(PR|TW)$").matcher(s);
+        if (m.matches()) {
+            return m.group(1) + "_" + m.group(2);
+        }
+        return s;
     }
 
     // A subject row starts with a 6-digit code, e.g. "101011- 1 P 014 ..." or "101011- 1_ PR --- ...".

@@ -11,6 +11,8 @@ import com.aards.session.AcademicSession;
 import com.aards.session.AcademicSessionRepository;
 import com.aards.student.Student;
 import com.aards.student.StudentRepository;
+import com.aards.subject.Subject;
+import com.aards.subject.SubjectRepository;
 import com.aards.user.Role;
 import com.aards.user.User;
 import com.aards.user.repository.UserRepository;
@@ -58,6 +60,9 @@ class UploadServiceTest {
     @Autowired
     private SemesterResultRepository semesterResultRepository;
 
+    @Autowired
+    private SubjectRepository subjectRepository;
+
     @Test
     void uploadOneStudent() throws Exception {
         // Faculty with COMP department (create or reuse, never duplicate).
@@ -89,6 +94,9 @@ class UploadServiceTest {
                 content.setLeading(15f);
                 content.newLineAtOffset(50, 750);
                 String[] lines = {
+                        "Semester: 1",
+                        "Code Paper Title",
+                        "101011- 1 101011 Engineering Mechanics",
                         "PRN: 33334444A Seat No.: F190890001 NAME: Test Student Mother- Test Mother",
                         "SEMESTER: 1",
                         "101011- 1 P 014 P 028 --- --- --- --- 042 3 3 P 4 12",
@@ -129,6 +137,13 @@ class UploadServiceTest {
         assertEquals(1, results.size());
         assertEquals(1, results.get(0).getYear());
         assertEquals(1, results.get(0).getSemester());
+
+        // Saved subject uses the list-page title, not the code.
+        Subject subject = subjectRepository
+                .findByCodeAndDepartmentIdAndYearAndSemester(
+                        "101011-1", comp.getId(), 1, 1)
+                .orElseThrow();
+        assertEquals("Engineering Mechanics", subject.getName());
 
         // One semester row with the ledger SGPA and zero backlogs (grade P).
         SemesterResult semesterResult = semesterResultRepository

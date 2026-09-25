@@ -11,8 +11,10 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.ByteArrayOutputStream;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 // Uses ledger-style text (2019 Pattern): 1 student, 2 subjects, SGPA + result lines.
 @SpringBootTest
@@ -91,6 +93,25 @@ class ParserServiceTest {
         assertEquals(2, record.getSemesters().size());
         assertEquals(7.14, record.getSemesters().get(0).getSgpa());
         assertEquals(8.00, record.getSemesters().get(1).getSgpa());
+    }
+
+    @Test
+    void extractSubjectNamesFromListPage() {
+        String text =
+                "Semester: 1\n"
+                + "Code Paper Title\n"
+                + "101007 101007 Environmental Studies- I\n"
+                + "101011- 1 101011 Engineering Mechanics\n"
+                + "101011- 1 PR 101011 Engineering Mechanics\n"
+                + "102003_TW 102003 Systems in Mechanical Engineering\n";
+        Map<String, String> names = parserService.extractSubjectNames(text);
+
+        assertEquals(4, names.size());
+        assertEquals("Environmental Studies- I", names.get("101007"));
+        assertEquals("Engineering Mechanics", names.get("101011-1"));
+        assertEquals("Engineering Mechanics", names.get("101011-1_PR"));
+        assertEquals("Systems in Mechanical Engineering", names.get("102003_TW"));
+        assertFalse(names.containsKey("Code Paper Title"));
     }
 
     @Test

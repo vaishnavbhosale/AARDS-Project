@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 // The "Orchestrator". One method runs the full pipeline:
 // save file -> parse -> validate -> save to DB.
@@ -128,6 +129,16 @@ public class UploadService {
             // f. Parse PDF
             List<ParsedRecord> records = parserService.parse(file);
 
+            // f2. Subject titles from the list page (first page). This must
+            // never fail the upload: fall back to codes as names.
+            Map<String, String> subjectNames = Map.of();
+            try {
+                String fullText = parserService.extractFullText(file.getBytes());
+                subjectNames = parserService.extractSubjectNames(fullText);
+            } catch (Exception e) {
+                log.warn("Subject name extraction failed, using codes as names", e);
+            }
+
             // g. Record counts
             batch.setTotalRecords(records.size());
             batch.setParsedRecords(records.size());
@@ -156,7 +167,7 @@ public class UploadService {
             }
 
             // m. No errors: save students + results
-            saveParsedData(records, batch, departmentId, session);
+            saveParsedData(records, batch, departmentId, session, subjectNames);
 
             // n. Mark done
             batch.setStatus(UploadStatus.VALIDATED);
@@ -190,9 +201,9 @@ public class UploadService {
         Department department = departmentRepository.findById(departmentId).orElse(null);
         AcademicSession session = resolveActiveSession();
         List<ParsedRecord> records;
+        byte[] bytes;
         try {
             org.springframework.core.io.Resource resource = fileStorageService.load(batch.getFilePath());
-            byte[] bytes;
             try (java.io.InputStream in = resource.getInputStream()) {
                 bytes = in.readAllBytes();
             }
@@ -202,7 +213,14 @@ public class UploadService {
             throw new RuntimeException("Re-parse failed: " + e.getMessage(), e);
         }
         applyCorrections(records, batchId);
-        saveParsedData(records, batch, departmentId, session);
+        Map<String, String> subjectNames = Map.of();
+        try {
+            subjectNames = parserService.extractSubjectNames(
+                    parserService.extractFullText(bytes));
+        } catch (Exception e) {
+            log.warn("Subject name extraction failed, using codes as names", e);
+        }
+        saveParsedData(records, batch, departmentId, session, subjectNames);
         batch.setStatus(UploadStatus.VALIDATED);
         batch.setCompletedAt(LocalDateTime.now());
         batchRepository.save(batch);
@@ -234,7 +252,8 @@ public class UploadService {
     // dashboard can find it. Re-uploading the same PRN updates, never duplicates.
     // Each subject row carries its own semester, so one record can span semesters.
     private void saveParsedData(List<ParsedRecord> records, UploadBatch batch,
-                                Long departmentId, AcademicSession session) {
+                                Long departmentId, AcademicSession session,
+                                Map<String, String> subjectNames) {
         int currentYear = LocalDateTime.now().getYear();
 
         for (ParsedRecord record : records) {
@@ -274,7 +293,7 @@ public class UploadService {
                 int backlogs = 0;
 
                 for (SubjectMark mark : entry.getValue()) {
-                    Subject subject = findOrCreateSubject(mark, departmentId, year, sem);
+                    Subject subject = findOrCreateSubject(mark, departmentId, year, sem, subjectNames);
                     double obtained = mark.getMarksObtained() == null ? 0 : mark.getMarksObtained();
                     double max = mark.getMaxMarks() == null ? 100 : mark.getMaxMarks();
                     boolean pass = obtained >= 0.4 * max;
@@ -338,19 +357,61 @@ public class UploadService {
     }
 
     private Subject findOrCreateSubject(SubjectMark mark, Long departmentId,
-                                        Integer year, Integer semester) {
-        return subjectRepository.findByCodeAndDepartmentIdAndYearAndSemester(
-                        mark.getSubjectCode(), departmentId, year, semester)
-                .orElseGet(() -> subjectRepository.save(Subject.builder()
-                        .code(mark.getSubjectCode())
-                        .name(mark.getSubjectName() == null ? mark.getSubjectCode() : mark.getSubjectName())
-                        .departmentId(departmentId)
-                        .year(year)
-                        .semester(semester)
-                        .maxMarks(mark.getMaxMarks() == null ? 100 : mark.getMaxMarks().intValue())
-                        .passingMarks((int) ((mark.getMaxMarks() == null ? 100 : mark.getMaxMarks()) * 0.4))
-                        .credits(4)
-                        .build()));
+                                        Integer year, Integer semester,
+                                        Map<String, String> subjectNames) {
+        String resolvedName = resolveSubjectName(mark, subjectNames);
+        Optional<Subject> existing = subjectRepository.findByCodeAndDepartmentIdAndYearAndSemester(
+                mark.getSubjectCode(), departmentId, year, semester);
+        if (existing.isPresent()) {
+            Subject subject = existing.get();
+            // Backfill: earlier uploads stored the code as name. Replace it
+            // with the real title once known. Never touch real names.
+            if ((subject.getName() == null || subject.getName().equals(subject.getCode()))
+                    && !resolvedName.equals(mark.getSubjectCode())) {
+                subject.setName(resolvedName);
+                subject = subjectRepository.save(subject);
+            }
+            return subject;
+        }
+        return subjectRepository.save(Subject.builder()
+                .code(mark.getSubjectCode())
+                .name(resolvedName)
+                .departmentId(departmentId)
+                .year(year)
+                .semester(semester)
+                .maxMarks(mark.getMaxMarks() == null ? 100 : mark.getMaxMarks().intValue())
+                .passingMarks((int) ((mark.getMaxMarks() == null ? 100 : mark.getMaxMarks()) * 0.4))
+                .credits(4)
+                .build());
+    }
+
+    // Real title from the PDF list page. Exact code first, then the base code
+    // without _PR/_TW. Falls back to the code (old behavior) when unknown.
+    private String resolveSubjectName(SubjectMark mark, Map<String, String> subjectNames) {
+        String fallback = mark.getSubjectName() == null ? mark.getSubjectCode() : mark.getSubjectName();
+        if (subjectNames == null || subjectNames.isEmpty()) {
+            return fallback;
+        }
+        String exact = subjectNames.get(mark.getSubjectCode());
+        if (exact != null && !exact.isBlank()) {
+            return exact;
+        }
+        String mapped = subjectNames.get(stripPracticalSuffix(mark.getSubjectCode()));
+        if (mapped != null && !mapped.isBlank()) {
+            return mapped;
+        }
+        return fallback;
+    }
+
+    // "101011-1_PR" -> "101011-1", "102003_TW" -> "102003".
+    private String stripPracticalSuffix(String code) {
+        if (code == null) {
+            return null;
+        }
+        if (code.endsWith("_PR") || code.endsWith("_TW")) {
+            return code.substring(0, code.length() - 3);
+        }
+        return code;
     }
 
     // Exactly one session must be active. Uploads always use that one.
