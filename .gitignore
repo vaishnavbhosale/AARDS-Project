@@ -70,3 +70,29 @@ uploads/
 .cache/
 .temp/
 tmp/
+
+# Local Spring config with secrets
+backend/src/main/resources/application.properties
+backend/src/main/resources/application-dev.properties
+
+# Uploaded PDFs and local uploads
+backend/uploads/
+uploads/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+backend/target/
+frontend/dist/
+frontend/node_modules/

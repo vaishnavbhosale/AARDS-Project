@@ -1,0 +1,30 @@
+# Copy this file to application.properties and fill in your local values.
+# DO NOT commit application.properties with real values.
+
+spring.application.name=aards-backend
+server.port=8080
+
+# Database (use environment variables in production)
+spring.datasource.url=${DB_URL:jdbc:postgresql://localhost:5432/aards}
+spring.datasource.username=${DB_USERNAME:postgres}
+spring.datasource.password=${DB_PASSWORD}
+spring.datasource.driver-class-name=org.postgresql.Driver
+spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=false
+
+# JWT
+aards.jwt.secret=${JWT_SECRET:CHANGE_THIS_TO_A_LONG_RANDOM_SECRET_KEY_AT_LEAST_32_CHARS}
+aards.jwt.expiration=86400000
+
+# Upload
+aards.upload.dir=./uploads
+spring.servlet.multipart.max-file-size=20MB
+spring.servlet.multipart.max-request-size=20MB
+
+# Parser
+aards.parser.strategy=default
+aards.ocr.enabled=false
+
+# Logging
+logging.level.com.aards=INFO

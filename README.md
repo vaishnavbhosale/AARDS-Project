@@ -3,6 +3,24 @@
 > SPPU-only web application that processes entire class result PDFs, extracts student data,
 > generates academic analytics, and provides AI-based recommendations for Faculty, HODs and Principal.
 
+## Local Setup
+
+### Backend
+1. Install PostgreSQL and create a database: `CREATE DATABASE aards;`
+2. Copy `backend/src/main/resources/application.properties.example` to `application.properties`
+3. Update the password (or set env var `DB_PASSWORD`)
+4. Run: `cd backend && mvn spring-boot:run`
+
+### Frontend
+1. `cd frontend && npm install`
+2. Create `.env` with `VITE_API_BASE_URL=http://localhost:8080/api/v1`
+3. Run: `npm run dev`
+
+### Default Admin
+- Username: `admin`
+- Password: `admin123`
+- Change immediately after first login (feature coming soon)
+
 ## Workflow
 
 Faculty Login → Upload PDF → Orchestrator → Check PDF type (Digital → PDFBox, else OCR)
