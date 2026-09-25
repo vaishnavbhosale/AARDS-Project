@@ -22,7 +22,8 @@ public class ValidationService {
 
     private static final Logger log = LoggerFactory.getLogger(ValidationService.class);
 
-    private static final String PRN_RULE = "\\d{8,12}";
+    // Accepts old numeric PRNs and ledger PRNs like 72332766B (digits + letter).
+    private static final String PRN_RULE = "(\\d{8,12}|\\d{8,9}[A-Z])";
 
     private final ValidationErrorRepository errorRepository;
     private final UploadService uploadService;

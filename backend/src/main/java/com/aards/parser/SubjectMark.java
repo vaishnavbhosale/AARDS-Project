@@ -5,13 +5,14 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-// One subject mark inside a ParsedRecord. Plain POJO, not an entity.
+// One subject row from the ledger. Plain POJO, not an entity.
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class SubjectMark {
     private String subjectCode;
+    private String subjectSuffix;
     private String subjectName;
     private Double marksObtained;
     private Double maxMarks;

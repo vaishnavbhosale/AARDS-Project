@@ -14,32 +14,40 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-// Builds a tiny PDF in memory and checks the parser finds 2 students.
+// Uses ledger-style text (2019 Pattern): 1 student, 2 subjects, SGPA + result lines.
 @SpringBootTest
 class ParserServiceTest {
 
     @Autowired
     private ParserService parserService;
 
+    private static final String LEDGER_TEXT =
+            "PRN: 72332766B Seat No.: F190890003 NAME: RAHUL SHARMA Mother- SUNITA\n"
+            + "SEMESTER: 1\n"
+            + "101011- 1 P 014 P 028 --- --- --- --- 042 3 3 P 4 12\n"
+            + "102003- 1 P 016 P 041 --- --- --- 057 3 3 B+ 7 21\n"
+            + "First Semester SGPA : 7.14 Credits Earned/Total : 22/22 Total Credit Points: 157\n"
+            + "First Year Total Credits Earned : 44/44";
+
     @Test
-    void parseTwoStudents() throws Exception {
-        byte[] pdfBytes = buildFakePdf();
+    void parseLedgerText() {
+        List<ParsedRecord> records = parserService.parseText(LEDGER_TEXT);
 
-        MockMultipartFile file = new MockMultipartFile(
-                "file", "result.pdf", "application/pdf", pdfBytes);
-
-        List<ParsedRecord> records = parserService.parse(file);
-
-        assertEquals(2, records.size());
-        assertEquals("11111111", records.get(0).getPrn());
-        assertEquals("22222222", records.get(1).getPrn());
-        assertEquals(2, records.get(0).getMarks().size());
-        assertEquals(2, records.get(1).getMarks().size());
-        assertEquals(75.0, records.get(0).getMarks().get(0).getMarksObtained());
-        assertEquals("CS201", records.get(0).getMarks().get(0).getSubjectCode());
+        assertEquals(1, records.size());
+        ParsedRecord record = records.get(0);
+        assertEquals("72332766B", record.getPrn());
+        assertEquals("RAHUL SHARMA", record.getName());
+        assertEquals(2, record.getMarks().size());
+        assertEquals("101011-1", record.getMarks().get(0).getSubjectCode());
+        assertEquals("102003-1", record.getMarks().get(1).getSubjectCode());
+        assertEquals(1, record.getSemesters().size());
+        assertEquals(7.14, record.getSemesters().get(0).getSgpa());
+        assertEquals("PASS", record.getOverallResult());
     }
 
-    private byte[] buildFakePdf() throws Exception {
+    @Test
+    void parseLedgerPdf() throws Exception {
+        byte[] pdfBytes;
         try (PDDocument doc = new PDDocument();
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             PDPage page = new PDPage();
@@ -49,22 +57,21 @@ class ParserServiceTest {
                 content.beginText();
                 content.setLeading(15f);
                 content.newLineAtOffset(50, 750);
-                String[] lines = {
-                        "PRN: 11111111 Name: Aarav Sharma Year: 2 Sem: 3",
-                        "CS201 75/100 A",
-                        "CS202 62/100 B",
-                        "PRN: 22222222 Name: Diya Patil Year: 2 Sem: 3",
-                        "CS201 82/100 A",
-                        "CS202 55/100 C"
-                };
-                for (String line : lines) {
+                for (String line : LEDGER_TEXT.split("\\n")) {
                     content.showText(line);
                     content.newLine();
                 }
                 content.endText();
             }
             doc.save(out);
-            return out.toByteArray();
+            pdfBytes = out.toByteArray();
         }
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "ledger.pdf", "application/pdf", pdfBytes);
+        List<ParsedRecord> records = parserService.parse(file);
+
+        assertEquals(1, records.size());
+        assertEquals("72332766B", records.get(0).getPrn());
     }
 }

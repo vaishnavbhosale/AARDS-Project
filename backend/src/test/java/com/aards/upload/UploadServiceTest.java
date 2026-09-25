@@ -48,8 +48,11 @@ class UploadServiceTest {
                 content.setLeading(15f);
                 content.newLineAtOffset(50, 750);
                 String[] lines = {
-                        "PRN: 33334444 Name: Test Student Year: 2 Sem: 3",
-                        "CS201 70/100 B"
+                        "PRN: 33334444A Seat No.: F190890001 NAME: Test Student Mother- Test Mother",
+                        "SEMESTER: 1",
+                        "101011- 1 P 014 P 028 --- --- --- --- 042 3 3 P 4 12",
+                        "First Semester SGPA : 7.50 Credits Earned/Total : 22/22 Total Credit Points: 165",
+                        "First Year Total Credits Earned : 44/44"
                 };
                 for (String line : lines) {
                     content.showText(line);
@@ -68,7 +71,7 @@ class UploadServiceTest {
 
         assertNotNull(response.getId());
         assertEquals(1, response.getTotalRecords());
-        assertTrue(response.getStatus().equals("VALIDATED") || response.getStatus().equals("PARSED"));
-        assertTrue(studentRepository.findByPrn("33334444").isPresent());
+        assertEquals("VALIDATED", response.getStatus());
+        assertTrue(studentRepository.findByPrn("33334444A").isPresent());
     }
 }
