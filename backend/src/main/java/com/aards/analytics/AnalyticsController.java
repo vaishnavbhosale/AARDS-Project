@@ -2,6 +2,7 @@ package com.aards.analytics;
 
 import com.aards.analytics.dto.AnalyticsFilterRequest;
 import com.aards.analytics.dto.DashboardResponse;
+import com.aards.common.SecurityUtil;
 import com.aards.common.dto.ApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,7 +33,7 @@ public class AnalyticsController {
                 .year(year)
                 .semester(semester)
                 .build();
-        DashboardResponse response = analyticsService.getDashboard(filter);
+        DashboardResponse response = analyticsService.getDashboard(filter, SecurityUtil.getCurrentUser());
         return ResponseEntity.ok(ApiResponse.success("Analytics fetched", response));
     }
 }

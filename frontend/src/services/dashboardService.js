@@ -29,6 +29,14 @@ const dashboardService = {
     });
     return res.data;
   },
+
+  async downloadInstituteReport({ sessionId, year, semester }) {
+    const res = await api.get('/reports/institute', {
+      params: { sessionId, year, semester },
+      responseType: 'blob',
+    });
+    return res.data;
+  },
 };
 
 export default dashboardService;

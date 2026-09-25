@@ -23,7 +23,7 @@ export default function App() {
           </Route>
         </Route>
 
-        <Route element={<ProtectedRoute roles={['FACULTY', 'ADMIN']} />}>
+        <Route element={<ProtectedRoute roles={['FACULTY', 'HOD', 'ADMIN']} />}>
           <Route element={<AppLayout />}>
             <Route path="/upload" element={<Upload />} />
             <Route path="/validation/:batchId" element={<Validation />} />

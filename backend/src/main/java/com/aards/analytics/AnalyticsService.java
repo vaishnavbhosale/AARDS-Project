@@ -7,6 +7,7 @@ import com.aards.analytics.dto.DashboardResponse;
 import com.aards.analytics.dto.FilterOptionsDto;
 import com.aards.analytics.dto.GradeDistributionDto;
 import com.aards.analytics.dto.SubjectPerformanceDto;
+import com.aards.department.Department;
 import com.aards.department.DepartmentRepository;
 import com.aards.result.ResultRepository;
 import com.aards.result.ResultStatus;
@@ -18,6 +19,8 @@ import com.aards.student.Student;
 import com.aards.student.StudentRepository;
 import com.aards.subject.Subject;
 import com.aards.subject.SubjectRepository;
+import com.aards.user.Role;
+import com.aards.user.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -55,7 +58,8 @@ public class AnalyticsService {
         this.departmentRepository = departmentRepository;
     }
 
-    public DashboardResponse getDashboard(AnalyticsFilterRequest filter) {
+    public DashboardResponse getDashboard(AnalyticsFilterRequest filter, User currentUser) {
+        applyRoleScope(filter, currentUser);
         log.info("Analytics generated for session={}, dept={}, year={}, sem={}",
                 filter.getAcademicSessionId(), filter.getDepartmentId(),
                 filter.getYear(), filter.getSemester());
@@ -161,21 +165,48 @@ public class AnalyticsService {
                 .build();
     }
 
-    public FilterOptionsDto getFilterOptions() {
+    public FilterOptionsDto getFilterOptions(User currentUser) {
         log.info("Fetching dashboard filter options");
         List<FilterOptionsDto.SessionOption> sessions = sessionRepository.findAll().stream()
                 .map(s -> FilterOptionsDto.SessionOption.builder().id(s.getId()).name(s.getName()).build())
                 .toList();
-        List<FilterOptionsDto.DepartmentOption> departments = departmentRepository.findAll().stream()
+        // HODs only ever see their own department. Everyone else sees all.
+        List<Department> departments;
+        if (currentUser != null && currentUser.getRole() == Role.HOD) {
+            if (currentUser.getDepartmentId() == null) {
+                throw new RuntimeException("HOD has no department assigned.");
+            }
+            departments = departmentRepository.findById(currentUser.getDepartmentId())
+                    .map(List::of).orElse(List.of());
+        } else {
+            departments = departmentRepository.findAll();
+        }
+        List<FilterOptionsDto.DepartmentOption> options = departments.stream()
                 .map(d -> FilterOptionsDto.DepartmentOption.builder()
                         .id(d.getId()).name(d.getName()).code(d.getCode()).build())
                 .toList();
         return FilterOptionsDto.builder()
                 .sessions(sessions)
-                .departments(departments)
+                .departments(options)
                 .years(List.of(1, 2, 3, 4))
                 .semesters(List.of(1, 2, 3, 4, 5, 6, 7, 8))
                 .build();
+    }
+
+    // HODs are locked to their own department. Other roles keep the filter as given.
+    private void applyRoleScope(AnalyticsFilterRequest filter, User currentUser) {
+        if (currentUser == null || currentUser.getRole() != Role.HOD) {
+            return;
+        }
+        if (currentUser.getDepartmentId() == null) {
+            throw new RuntimeException("HOD has no department assigned.");
+        }
+        if (!currentUser.getDepartmentId().equals(filter.getDepartmentId())) {
+            log.warn("HOD {} asked for out-of-scope department {}, forcing {}",
+                    currentUser.getUsername(), filter.getDepartmentId(),
+                    currentUser.getDepartmentId());
+        }
+        filter.setDepartmentId(currentUser.getDepartmentId());
     }
 
     private SubjectPerformanceDto toSubjectPerformance(Subject subject, Long sessionId) {

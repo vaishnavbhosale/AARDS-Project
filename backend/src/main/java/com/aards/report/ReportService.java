@@ -68,7 +68,7 @@ public class ReportService {
     // Full department report: cards + topper + subject table.
     public byte[] generateDepartmentReport(AnalyticsFilterRequest filter) {
         log.info("Generating department report for {}", filter);
-        DashboardResponse dashboard = analyticsService.getDashboard(filter);
+        DashboardResponse dashboard = analyticsService.getDashboard(filter, null);
         String deptName = departmentName(filter.getDepartmentId());
         String sessionName = sessionName(filter.getAcademicSessionId());
 
@@ -178,7 +178,7 @@ public class ReportService {
                     .year(year)
                     .semester(semester)
                     .build();
-            CardsDto cards = analyticsService.getDashboard(filter).getCards();
+            CardsDto cards = analyticsService.getDashboard(filter, null).getCards();
             grandTotal += cards == null ? 0 : cards.getTotalStudents();
             rows.add(new String[]{
                     dept.getCode() + " - " + dept.getName(),

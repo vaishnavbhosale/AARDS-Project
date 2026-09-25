@@ -11,7 +11,9 @@ import {
 } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
 import dashboardService, { downloadBlob } from '../services/dashboardService';
+import { useAuth } from '../context/AuthContext';
 import Button from '../components/Button';
+import Input from '../components/Input';
 import Select from '../components/Select';
 import Card from '../components/Card';
 import Table from '../components/Table';
@@ -71,6 +73,10 @@ function getErrorMessage(err, fallback) {
 }
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const isHod = user?.role === 'HOD';
+  const isPrincipal = user?.role === 'PRINCIPAL';
+
   const [filters, setFilters] = useState(null);
   const [loadingFilters, setLoadingFilters] = useState(true);
   const [filtersError, setFiltersError] = useState('');
@@ -87,8 +93,17 @@ export default function Dashboard() {
   const [dashboardError, setDashboardError] = useState('');
 
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [generatingInstitute, setGeneratingInstitute] = useState(false);
   const [reportError, setReportError] = useState('');
   const [downloadingSubjectId, setDownloadingSubjectId] = useState(null);
+
+  // HODs only get their own department back, so it is the first (only) one.
+  const hodDepartment = filters?.departments?.[0];
+  const hodDepartmentName = hodDepartment
+    ? hodDepartment.code
+      ? `${hodDepartment.code} - ${hodDepartment.name}`
+      : hodDepartment.name
+    : '';
 
   function currentFilters() {
     return {
@@ -113,6 +128,27 @@ export default function Dashboard() {
       setReportError(getErrorMessage(err, 'Failed to generate report.'));
     } finally {
       setGeneratingReport(false);
+    }
+  }
+
+  async function handleDownloadInstitute() {
+    if (!selected.sessionId || generatingInstitute) return;
+    setGeneratingInstitute(true);
+    setReportError('');
+    try {
+      const blob = await dashboardService.downloadInstituteReport({
+        sessionId: selected.sessionId,
+        year: Number(selected.year),
+        semester: Number(selected.semester),
+      });
+      downloadBlob(
+        blob,
+        `institute-report-${selected.sessionId}-${selected.year}-${selected.semester}.pdf`
+      );
+    } catch (err) {
+      setReportError(getErrorMessage(err, 'Failed to generate report.'));
+    } finally {
+      setGeneratingInstitute(false);
     }
   }
 
@@ -332,7 +368,7 @@ export default function Dashboard() {
         <Alert type="error">{filtersError}</Alert>
       ) : (
         <Card>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className={`grid grid-cols-2 gap-3 ${isHod ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
             <Select
               label="Academic Session"
               value={selected.sessionId}
@@ -342,17 +378,21 @@ export default function Dashboard() {
                 label: s.name,
               }))}
             />
-            <Select
-              label="Department"
-              value={selected.departmentId}
-              onChange={(e) =>
-                setSelected({ ...selected, departmentId: e.target.value })
-              }
-              options={(filters?.departments || []).map((d) => ({
-                value: String(d.id),
-                label: d.code ? `${d.code} - ${d.name}` : d.name,
-              }))}
-            />
+            {isHod ? (
+              <Input label="Department" value={hodDepartmentName} disabled readOnly />
+            ) : (
+              <Select
+                label="Department"
+                value={selected.departmentId}
+                onChange={(e) =>
+                  setSelected({ ...selected, departmentId: e.target.value })
+                }
+                options={(filters?.departments || []).map((d) => ({
+                  value: String(d.id),
+                  label: d.code ? `${d.code} - ${d.name}` : d.name,
+                }))}
+              />
+            )}
             <Select
               label="Year"
               value={selected.year}
@@ -381,14 +421,26 @@ export default function Dashboard() {
                 Reset
               </Button>
             </div>
-            <Button
-              variant="secondary"
-              onClick={handleDownloadDepartment}
-              loading={generatingReport}
-              disabled={generatingReport}
-            >
-              {generatingReport ? 'Generating...' : 'Download Department Report'}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                onClick={handleDownloadDepartment}
+                loading={generatingReport}
+                disabled={generatingReport}
+              >
+                {generatingReport ? 'Generating...' : 'Download Department Report'}
+              </Button>
+              {isPrincipal && (
+                <Button
+                  variant="secondary"
+                  onClick={handleDownloadInstitute}
+                  loading={generatingInstitute}
+                  disabled={generatingInstitute}
+                >
+                  {generatingInstitute ? 'Generating...' : 'Download Institute Report'}
+                </Button>
+              )}
+            </div>
           </div>
         </Card>
       )}

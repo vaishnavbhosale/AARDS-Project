@@ -33,7 +33,7 @@ export default function Sidebar({ open, onClose }) {
           <NavLink to="/dashboard" className={linkClass} onClick={onClose}>
             Dashboard
           </NavLink>
-          {hasAnyRole(['FACULTY', 'ADMIN']) && (
+          {hasAnyRole(['FACULTY', 'HOD', 'ADMIN']) && (
             <NavLink to="/upload" className={linkClass} onClick={onClose}>
               Upload
             </NavLink>

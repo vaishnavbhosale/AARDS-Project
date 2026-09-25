@@ -4,6 +4,7 @@ import com.aards.analytics.AnalyticsService;
 import com.aards.analytics.dto.AnalyticsFilterRequest;
 import com.aards.analytics.dto.DashboardResponse;
 import com.aards.analytics.dto.FilterOptionsDto;
+import com.aards.common.SecurityUtil;
 import com.aards.common.dto.ApiResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,13 +41,14 @@ public class DashboardController {
                 .year(year)
                 .semester(semester)
                 .build();
-        DashboardResponse response = analyticsService.getDashboard(filter);
+        DashboardResponse response = analyticsService.getDashboard(filter, SecurityUtil.getCurrentUser());
         return ResponseEntity.ok(ApiResponse.success("Dashboard fetched", response));
     }
 
     @GetMapping("/filters")
     public ResponseEntity<ApiResponse<FilterOptionsDto>> filters() {
         return ResponseEntity.ok(
-                ApiResponse.success("Filter options fetched", analyticsService.getFilterOptions()));
+                ApiResponse.success("Filter options fetched",
+                        analyticsService.getFilterOptions(SecurityUtil.getCurrentUser())));
     }
 }
