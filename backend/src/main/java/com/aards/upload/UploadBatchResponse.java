@@ -23,4 +23,6 @@ public class UploadBatchResponse {
     private LocalDateTime uploadedAt;
     private LocalDateTime completedAt;
     private String uploadedByUsername;
+    private String departmentName;
+    private String academicSessionName;
 }
