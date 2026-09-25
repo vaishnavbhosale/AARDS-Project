@@ -2,6 +2,8 @@ package com.aards.config;
 
 import com.aards.department.Department;
 import com.aards.department.DepartmentRepository;
+import com.aards.session.AcademicSession;
+import com.aards.session.AcademicSessionRepository;
 import com.aards.subject.Subject;
 import com.aards.subject.SubjectRepository;
 import com.aards.user.Role;
@@ -22,15 +24,18 @@ public class DataSeeder implements CommandLineRunner {
     private final UserRepository userRepository;
     private final DepartmentRepository departmentRepository;
     private final SubjectRepository subjectRepository;
+    private final AcademicSessionRepository sessionRepository;
     private final PasswordEncoder passwordEncoder;
 
     public DataSeeder(UserRepository userRepository,
                       DepartmentRepository departmentRepository,
                       SubjectRepository subjectRepository,
+                      AcademicSessionRepository sessionRepository,
                       PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.departmentRepository = departmentRepository;
         this.subjectRepository = subjectRepository;
+        this.sessionRepository = sessionRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -38,10 +43,21 @@ public class DataSeeder implements CommandLineRunner {
     public void run(String... args) {
         try {
             seedAdmin();
+            seedSession();
             seedDepartmentAndSubjects();
         } catch (Exception e) {
             // Never crash startup because of seed data.
             log.error("Data seeding failed, continuing startup", e);
+        }
+    }
+
+    private void seedSession() {
+        if (sessionRepository.count() == 0) {
+            sessionRepository.save(AcademicSession.builder()
+                    .name("2024-25")
+                    .active(true)
+                    .build());
+            log.info("Default academic session created: 2024-25");
         }
     }
 

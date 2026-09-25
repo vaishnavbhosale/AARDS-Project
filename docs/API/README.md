@@ -48,9 +48,10 @@ Default seed admin: `admin / admin123` (change on first login).
 | GET | `/validation/batch/{batchId}` | logged in | List all errors for a batch |
 | PUT | `/validation/{errorId}` | FACULTY | Fix one error. Body: `{ correctedValue }` |
 | POST | `/validation/batch/{batchId}/approve` | FACULTY | Approve all + finalize batch (saves students/results, VALIDATED) |
-| GET | `/dashboard?session=&year=&semester=&department=` | FACULTY,HOD,PRINCIPAL | Cards, charts, subject analysis |
+| GET | `/dashboard?sessionId=&departmentId=&year=&semester=` | logged in | Dashboard: cards, subject performance, backlog + grade charts, topper |
+| GET | `/dashboard/filters` | logged in | Filter dropdowns: sessions, departments, years, semesters |
+| GET | `/analytics/dashboard?sessionId=&departmentId=&year=&semester=` | logged in | Same dashboard data (alternate path) |
 | GET | `/students` | FACULTY,HOD | List parsed students |
-| GET | `/analytics?uploadId=` | FACULTY,HOD | Analytics output |
 | GET | `/recommendations?uploadId=` | FACULTY,HOD,PRINCIPAL | Problem, Reason, Recommendation, Priority |
 | GET | `/reports?type=institute&uploadId=` | FACULTY,HOD,PRINCIPAL | Generate PDF report |
 | GET | `/audit` | ADMIN | Audit logs |

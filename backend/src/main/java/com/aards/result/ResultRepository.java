@@ -11,4 +11,9 @@ public interface ResultRepository extends JpaRepository<Result, Long> {
     List<Result> findBySubjectIdAndAcademicSessionId(Long subjectId, Long sessionId);
 
     long countBySubjectIdAndStatus(Long subjectId, ResultStatus status);
+
+    long countBySubjectIdAndAcademicSessionIdAndStatus(Long subjectId, Long sessionId, ResultStatus status);
+
+    List<Result> findByAcademicSessionIdAndYearAndSemesterAndStudent_DepartmentId(
+            Long sessionId, Integer year, Integer semester, Long departmentId);
 }
