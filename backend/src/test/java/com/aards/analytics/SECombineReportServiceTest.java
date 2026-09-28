@@ -173,7 +173,7 @@ class SECombineReportServiceTest {
         Subject se204 = subjectRepository.save(Subject.builder()
                 .code("SE204").name("Combine TUT Subject")
                 .departmentId(dept.getId()).year(2).semester(3)
-                .credits(3).maxMarks(100).passingMarks(40).build());
+                .credits(3).maxMarks(50).passingMarks(20).build());
         addResult(s1, se204, session, 23, "A+", ResultStatus.PASS);
         addResult(s2, se204, session, 38, "A", ResultStatus.PASS);
         addResult(s6, se204, session, 65, "A", ResultStatus.PASS);
@@ -251,6 +251,10 @@ class SECombineReportServiceTest {
         assertEquals(3, rows.get(3).getAppeared());
         assertEquals(3, rows.get(3).getPassed());
         assertEquals(100.0, rows.get(3).getPassingPercentage());
+        // Bands run on percentage of maxMarks (50): 23->pass, 38->dist, 65->dist.
+        assertEquals(2, rows.get(3).getDistinction());
+        assertEquals(1, rows.get(3).getPassClass());
+        assertEquals(65.0, rows.get(3).getHighestMarks());
 
         // Toppers: top 5 by avg SGPA.
         List<SECombineReportResponse.TopperRow> toppers = response.getToppers();

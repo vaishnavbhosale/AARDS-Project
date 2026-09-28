@@ -109,6 +109,7 @@ class UploadServiceTest {
                         "SEMESTER: 1",
                         "101011- 1 P 014 P 028 --- --- --- --- 042 3 3 P 4 12",
                         "EEM-231-ETC  --- --- --- --- --- P 023 --- --- --- --- --- --- 023  2  2  A+  9  18",
+                        "PCC-201-ETC  P 024 * 033 --- --- --- --- --- --- --- --- --- --- 057  4  4  B+  7  28",
                         "First Semester SGPA : 7.50 Credits Earned/Total : 22/22 Total Credit Points: 165",
                         "First Year Total Credits Earned : 44/44"
                 };
@@ -159,7 +160,7 @@ class UploadServiceTest {
             // Every result row uses the active session + record year/sem.
             List<Result> results = resultRepository
                     .findByStudentIdAndAcademicSessionId(student.getId(), active.getId());
-            assertEquals(2, results.size());
+            assertEquals(3, results.size());
             assertEquals(1, results.get(0).getYear());
             assertEquals(1, results.get(0).getSemester());
 
@@ -172,6 +173,12 @@ class UploadServiceTest {
                     .stream().findFirst().orElseThrow();
             assertEquals("A+", tutResult.getGrade());
             assertEquals(ResultStatus.PASS, tutResult.getStatus());
+
+            // Ledger credits flow onto the Subject (4, not the default 3).
+            Subject fourCredit = subjectRepository
+                    .findByCodeAndDepartmentId("PCC-201-ETC", comp.getId())
+                    .orElseThrow();
+            assertEquals(4, fourCredit.getCredits());
 
             // Saved subject uses the list-page title, not the code.
             Subject subject = subjectRepository

@@ -287,16 +287,20 @@ public class SECombineReportService {
                 if (r.getStatus() == ResultStatus.PASS) {
                     passed.add(r.getStudent().getId());
                 }
+                // Bands run on percentage: some subjects are out of 50 or 25.
+                double max = subject.getMaxMarks() == null || subject.getMaxMarks() == 0
+                        ? 100 : subject.getMaxMarks();
                 double marks = r.getMarksObtained() == null ? 0 : r.getMarksObtained();
-                if (marks >= 65) {
+                double pctMarks = marks / max * 100;
+                if (pctMarks >= 65) {
                     dist++;
-                } else if (marks >= 60) {
+                } else if (pctMarks >= 60) {
                     first++;
-                } else if (marks >= 55) {
+                } else if (pctMarks >= 55) {
                     hsc++;
-                } else if (marks >= 50) {
+                } else if (pctMarks >= 50) {
                     sc++;
-                } else if (marks >= 40) {
+                } else if (pctMarks >= 40) {
                     pass++;
                 }
                 if (highest == null || marks > highest) {

@@ -362,7 +362,7 @@ public class UploadService {
                                 .departmentId(departmentId)
                                 .year(year)
                                 .semester(sem)
-                                .credits(3)
+                                .credits(mark.getCredits() != null ? mark.getCredits() : 3)
                                 .maxMarks(100)
                                 .passingMarks(40)
                                 .build();
@@ -375,6 +375,10 @@ public class UploadService {
                         if ((subject.getName() == null || subject.getName().equals(subject.getCode()))
                                 && !resolved.equals(mark.getSubjectCode())) {
                             subject.setName(resolved);
+                        }
+                        // Same for credits: fill in the ledger value if unset.
+                        if (subject.getCredits() == null && mark.getCredits() != null) {
+                            subject.setCredits(mark.getCredits());
                         }
                     }
                 }
@@ -400,6 +404,9 @@ public class UploadService {
                     if (isFailGrade(mark.getGrade())) {
                         backlogs++;
                     }
+                    // Parser-flagged absent rows (AAA/AB) keep their own status
+                    // so reports bucket them as absent, not failed.
+                    boolean absent = "ABSENT".equals(mark.getStatus());
                     results.add(Result.builder()
                             .student(w.student)
                             .subject(subject)
@@ -408,7 +415,8 @@ public class UploadService {
                             .semester(sem)
                             .marksObtained(obtained)
                             .grade(mark.getGrade())
-                            .status(pass ? ResultStatus.PASS : ResultStatus.FAIL)
+                            .status(absent ? ResultStatus.ABSENT
+                                    : (pass ? ResultStatus.PASS : ResultStatus.FAIL))
                             .backlog(!pass)
                             .build());
                 }

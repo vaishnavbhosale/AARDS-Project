@@ -86,6 +86,89 @@ class ParserServiceTest {
     }
 
     @Test
+    void parseTwoLetterCodeRow() {
+        String text =
+                "PRN: 724289563  SEAT NO.: S500890065  NAME: TEST STUDENT  Mother's Name :- TEST MOTHER\n"
+                + "SEMESTER: 3\n"
+                + "OE-203-DM  P 014 P 027 --- --- --- --- --- --- --- --- --- --- 041  2  2  A+  9  18\n";
+        List<ParsedRecord> records = parserService.parseText(text);
+
+        assertEquals(1, records.size());
+        assertEquals(1, records.get(0).getMarks().size());
+        SubjectMark oeMark = records.get(0).getMarks().get(0);
+        assertEquals("OE-203-DM", oeMark.getSubjectCode());
+        assertEquals(41.0, oeMark.getMarksObtained());
+        assertEquals("A+", oeMark.getGrade());
+        assertEquals("PASS", oeMark.getStatus());
+        assertEquals(2, oeMark.getCredits());
+    }
+
+    @Test
+    void parseGradeDRow() {
+        String text =
+                "PRN: 724289563  SEAT NO.: S500890065  NAME: TEST STUDENT  Mother's Name :- TEST MOTHER\n"
+                + "SEMESTER: 3\n"
+                + "PCC-201-ETC  P 020 * 025 --- --- --- --- --- --- --- --- --- --- 045  3  3  D  5  15\n";
+        List<ParsedRecord> records = parserService.parseText(text);
+
+        assertEquals(1, records.size());
+        assertEquals(1, records.get(0).getMarks().size());
+        SubjectMark dMark = records.get(0).getMarks().get(0);
+        assertEquals(45.0, dMark.getMarksObtained());
+        assertEquals("D", dMark.getGrade());
+        assertEquals("PASS", dMark.getStatus());
+    }
+
+    @Test
+    void parseAbsentAaaRow() {
+        String text =
+                "PRN: 724289563  SEAT NO.: S500890065  NAME: TEST STUDENT  Mother's Name :- TEST MOTHER\n"
+                + "SEMESTER: 3\n"
+                + "PCC-201-ETC * AAA * 000 --- --- --- --- --- --- --- --- --- --- 000 FFF  3  0  F  0  0\n";
+        List<ParsedRecord> records = parserService.parseText(text);
+
+        assertEquals(1, records.size());
+        assertEquals(1, records.get(0).getMarks().size());
+        SubjectMark absentMark = records.get(0).getMarks().get(0);
+        assertEquals("ABSENT", absentMark.getStatus());
+        assertEquals(null, absentMark.getMarksObtained());
+        assertEquals(null, absentMark.getGrade());
+    }
+
+    @Test
+    void parseAbsentAbRow() {
+        String text =
+                "PRN: 724289563  SEAT NO.: S500890065  NAME: TEST STUDENT  Mother's Name :- TEST MOTHER\n"
+                + "SEMESTER: 3\n"
+                + "PCC-202-ETC  AB 000 * 000 --- --- --- --- --- --- --- --- --- --- 000  3  0  F  0  0\n";
+        List<ParsedRecord> records = parserService.parseText(text);
+
+        assertEquals(1, records.size());
+        assertEquals(1, records.get(0).getMarks().size());
+        SubjectMark abMark = records.get(0).getMarks().get(0);
+        assertEquals("ABSENT", abMark.getStatus());
+        assertEquals(null, abMark.getMarksObtained());
+        assertEquals(null, abMark.getGrade());
+    }
+
+    @Test
+    void parseCreditsFromTail() {
+        String text =
+                "PRN: 724289563  SEAT NO.: S500890065  NAME: TEST STUDENT  Mother's Name :- TEST MOTHER\n"
+                + "SEMESTER: 3\n"
+                + "PCC-201-ETC  P 024 * 033 --- --- --- --- --- --- --- --- --- --- 057  4  4  B+  7  28\n";
+        List<ParsedRecord> records = parserService.parseText(text);
+
+        assertEquals(1, records.size());
+        assertEquals(1, records.get(0).getMarks().size());
+        SubjectMark creditMark = records.get(0).getMarks().get(0);
+        assertEquals(4, creditMark.getCredits());
+        assertEquals(28, creditMark.getCreditPoints());
+        assertEquals("B+", creditMark.getGrade());
+        assertEquals("PASS", creditMark.getStatus());
+    }
+
+    @Test
     void subjectRowsKeepTheirOwnSemester() {
         String text =
                 "PRN: 72332766B Seat No.: F190890003 NAME: RAHUL SHARMA Mother- SUNITA\n"

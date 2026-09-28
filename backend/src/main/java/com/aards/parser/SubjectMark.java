@@ -18,6 +18,9 @@ public class SubjectMark {
     private Double maxMarks;
     private String grade;
     private String status;
+    // Credits and credit points printed on the ledger row. Null when absent/unparsed.
+    private Integer credits;
+    private Integer creditPoints;
     // Which semester section this row appeared under. Null when no SEMESTER line seen yet.
     private Integer semester;
 }

@@ -12,9 +12,11 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,11 +30,11 @@ public class ParserService {
     private static final String PRN_LINE_PATTERN = "PRN:\\s*(\\d{8,9}[A-Z]?)\\s*Seat\\s*No\\.?:\\s*([A-Z0-9]+)\\s*NAME:\\s*(.+?)\\s*Mother(?:'s\\s+Name)?\\s*:?-?\\s*(.+)";
     private static final String SEMESTER_PATTERN = "SEMESTER:\\s*(\\d)";
     private static final String SUBJECT_ROW_PATTERN = "^(\\d{6})(?:[\\-_](\\d|PR|TW))?\\s+(.+)$";
-    private static final String SE_SUBJECT_HEAD_PATTERN = "^([A-Z]{3}-?\\d{3}[A-Z]?(?:-?[A-Z]{2,3})?)\\s+(.+)$";
+    private static final String SE_SUBJECT_HEAD_PATTERN = "^([A-Z]{2,3}-?\\d{3}[A-Z]?(?:-?[A-Z]{2,3})?)\\s+(.+)$";
     private static final String SGPA_PATTERN = "(First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth)\\s+Semester\\s+SGPA\\s*:\\s*([0-9.]+|\\-\\-\\-)";
     private static final String CREDITS_PATTERN = "Credits\\s+Earned/Total\\s*:\\s*(\\d+)/(\\d+)";
     private static final String RESULT_PATTERN = "(?i)(First|Second|Third|Fourth)\\s+Year\\s+(?:Result\\s*:\\s*(Pass|Fail(?:\\s+A\\.T\\.K\\.T\\.)?)|Total\\s+Credits\\s+Earned)";
-    private static final String GRADE_PATTERN = "\\b(O|A\\+|A|B\\+|B|C|P|F|FFF)\\b";
+    private static final String GRADE_PATTERN = "\\b(O|A\\+|A|B\\+|B|C|D|P|F|FFF)\\b";
     private static final String TOTAL_POINTS_PATTERN = "Total Credit Points\\s*:\\s*(\\d+)";
     // First-page subject list: code, optional suffix, repeated code, title.
     // e.g. "101011- 1 PR 101011 Engineering Mechanics".
@@ -40,7 +42,7 @@ public class ParserService {
             "^(\\d{6})(.*?)\\b\\1\\b\\s*(?:[-_]\\s*(?:\\d|PR|TW)\\s*|_\\s*(?:PR|TW)\\s*)*(.+)$";
     // SE paper list: code + wide gap + title. e.g. "PCC-201-ETC    Electronics Circuits".
     private static final String SE_SUBJECT_LIST_PATTERN =
-            "^([A-Z]{3}(?:-\\d{3}(?:-[A-Z]{2,3}|[A-Z])?|\\d{3}[A-Z]{2,3}))\\s{2,}(.+)$";
+            "^([A-Z]{2,3}(?:-\\d{3}(?:-[A-Z]{2,3}|[A-Z])?|\\d{3}[A-Z]{2,3}))\\s{2,}(.+)$";
     // Titles that look like mark data (grades, totals, separators) are not titles.
     private static final Pattern MARK_LIKE_TITLE_REGEX =
             Pattern.compile("---|\\*|\\b\\d{3}\\b");
@@ -316,11 +318,26 @@ public class ParserService {
             }
         }
 
+        // AAA/AB in the row means absent for this subject (commonly sitting in
+        // the ISE/ESE columns). Catch it before the tail: totals read 000.
+        Set<String> tokens = new HashSet<>(Arrays.asList(rest.split("\\s+")));
+        if (tokens.contains("AAA") || tokens.contains("AB")) {
+            return SubjectMark.builder()
+                    .subjectCode(code + suffix)
+                    .subjectSuffix(suffix)
+                    .subjectName(code + suffix)
+                    .marksObtained(null)
+                    .maxMarks(100.0)
+                    .grade(null)
+                    .status("ABSENT")
+                    .build();
+        }
+
         // Tail columns: Total, Credits, CreditsEarned, Grade, GradePoints, CreditPoints.
         // An extra FFF marker can sit between Total and Credits on fail rows.
         // Practical rows use digit "0" as grade (really letter O = Outstanding).
         Matcher tail = Pattern.compile(
-                "(\\d+)\\s+(?:FFF\\s+)?(\\d+)\\s+(\\d+)\\s+(O|0|A\\+|A|B\\+|B|C|P|F|FFF)\\s+(\\d+)\\s+(\\d+)$")
+                "(\\d+)\\s+(?:FFF\\s+)?(\\d+)\\s+(\\d+)\\s+(O|0|A\\+|A|B\\+|B|C|D|P|F|FFF)\\s+(\\d+)\\s+(\\d+)$")
                 .matcher(rest);
         if (!tail.find()) {
             // No tail (e.g. absent row with "AC"): skip marks, mark absent.
@@ -357,6 +374,8 @@ public class ParserService {
                 .maxMarks(100.0)
                 .grade(grade)
                 .status(status)
+                .credits(parseIntOrNull(tail.group(2)))
+                .creditPoints(parseIntOrNull(tail.group(6)))
                 .build();
     }
 
