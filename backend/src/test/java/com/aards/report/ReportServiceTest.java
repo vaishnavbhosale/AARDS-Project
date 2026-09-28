@@ -152,6 +152,16 @@ class ReportServiceTest {
         assertEquals("%PDF", new String(pdf, 0, 4, StandardCharsets.US_ASCII));
     }
 
+    @Test
+    void seCombineReportIsPdf() {
+        Fixture f = setupFixture();
+        byte[] pdf = reportService.generateSECombinePdf(f.filter());
+
+        assertNotNull(pdf);
+        assertTrue(pdf.length > 500);
+        assertEquals("%PDF", new String(pdf, 0, 4, StandardCharsets.US_ASCII));
+    }
+
     private record Fixture(AnalyticsFilterRequest filter, Long subjectId, Long sessionId) {
     }
 }

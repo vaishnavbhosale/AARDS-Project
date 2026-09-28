@@ -5,9 +5,11 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Upload from './pages/Upload';
 import Validation from './pages/Validation';
+import SECombineReport from './pages/SECombineReport';
 import UsersPage from './pages/admin/UsersPage';
 import DepartmentsPage from './pages/admin/DepartmentsPage';
 import SubjectsPage from './pages/admin/SubjectsPage';
+import SubjectFacultyPage from './pages/admin/SubjectFacultyPage';
 import NotFound from './pages/NotFound';
 
 export default function App() {
@@ -20,6 +22,7 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/reports/se-combine" element={<SECombineReport />} />
           </Route>
         </Route>
 
@@ -35,6 +38,7 @@ export default function App() {
             <Route path="/admin/users" element={<UsersPage />} />
             <Route path="/admin/departments" element={<DepartmentsPage />} />
             <Route path="/admin/subjects" element={<SubjectsPage />} />
+            <Route path="/admin/subject-faculty" element={<SubjectFacultyPage />} />
           </Route>
         </Route>
 

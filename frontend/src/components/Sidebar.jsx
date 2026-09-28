@@ -38,6 +38,11 @@ export default function Sidebar({ open, onClose }) {
               Upload
             </NavLink>
           )}
+          {hasAnyRole(['FACULTY', 'HOD', 'PRINCIPAL', 'ADMIN']) && (
+            <NavLink to="/reports/se-combine" className={linkClass} onClick={onClose}>
+              SE Combine Report
+            </NavLink>
+          )}
           {hasAnyRole(['ADMIN']) && (
             <>
               <p className="px-4 pt-3 pb-1 text-xs font-semibold text-slate-400 uppercase">
@@ -51,6 +56,9 @@ export default function Sidebar({ open, onClose }) {
               </NavLink>
               <NavLink to="/admin/subjects" className={linkClass} onClick={onClose}>
                 Subjects
+              </NavLink>
+              <NavLink to="/admin/subject-faculty" className={linkClass} onClick={onClose}>
+                Subject-Faculty
               </NavLink>
             </>
           )}

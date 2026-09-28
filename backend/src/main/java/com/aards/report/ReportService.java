@@ -1,6 +1,7 @@
 package com.aards.report;
 
 import com.aards.analytics.AnalyticsService;
+import com.aards.analytics.SECombineReportService;
 import com.aards.analytics.dto.AnalyticsFilterRequest;
 import com.aards.analytics.dto.CardsDto;
 import com.aards.analytics.dto.DashboardResponse;
@@ -8,6 +9,7 @@ import com.aards.analytics.dto.GradeDistributionDto;
 import com.aards.analytics.dto.SubjectPerformanceDto;
 import com.aards.department.Department;
 import com.aards.department.DepartmentRepository;
+import com.aards.report.dto.SECombineReportResponse;
 import com.aards.result.Result;
 import com.aards.result.ResultRepository;
 import com.aards.result.ResultStatus;
@@ -48,17 +50,20 @@ public class ReportService {
     private static final Color HEADER_BG = new Color(230, 230, 230);
 
     private final AnalyticsService analyticsService;
+    private final SECombineReportService seCombineReportService;
     private final DepartmentRepository departmentRepository;
     private final AcademicSessionRepository sessionRepository;
     private final SubjectRepository subjectRepository;
     private final ResultRepository resultRepository;
 
     public ReportService(AnalyticsService analyticsService,
+                         SECombineReportService seCombineReportService,
                          DepartmentRepository departmentRepository,
                          AcademicSessionRepository sessionRepository,
                          SubjectRepository subjectRepository,
                          ResultRepository resultRepository) {
         this.analyticsService = analyticsService;
+        this.seCombineReportService = seCombineReportService;
         this.departmentRepository = departmentRepository;
         this.sessionRepository = sessionRepository;
         this.subjectRepository = subjectRepository;
@@ -216,6 +221,220 @@ public class ReportService {
     // Plain A4 page with 1cm-ish margins.
     private Document createDocument() {
         return new Document(PageSize.A4, 36, 36, 36, 36);
+    }
+
+    // SE Combine PDF: landscape so the 13-column subject tables fit.
+    public byte[] generateSECombinePdf(AnalyticsFilterRequest filter) {
+        log.info("Generating SE Combine PDF for {}", filter);
+        SECombineReportResponse report = seCombineReportService.generateSECombineReport(filter);
+
+        Document document = new Document(PageSize.A4.rotate(), 36, 36, 36, 36);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            PdfWriter.getInstance(document, out);
+            document.open();
+            smallTitle(document, report.getHeader().getCollegeName());
+            smallCenter(document, report.getHeader().getDepartmentName() + " — Result Analysis");
+            smallCenter(document, "Session " + report.getHeader().getSessionName()
+                    + " | " + report.getHeader().getYearLabel()
+                    + " | Generated on " + report.getHeader().getGeneratedOn());
+
+            if (report.getOverall().getTotalAppeared() == 0) {
+                smallParagraph(document, "No data available for the selected filters.");
+            } else {
+                // Two-column row: distribution left, backlog right.
+                PdfPTable top = new PdfPTable(2);
+                top.setWidthPercentage(100);
+                PdfPCell left = new PdfPCell();
+                styleCell(left);
+                left.addElement(new Paragraph("Result Distribution",
+                        new Font(Font.HELVETICA, 12, Font.BOLD)));
+                left.addElement(combineDistTable(report.getDistribution()));
+                PdfPCell right = new PdfPCell();
+                styleCell(right);
+                right.addElement(new Paragraph("Backlog Distribution",
+                        new Font(Font.HELVETICA, 12, Font.BOLD)));
+                right.addElement(combineBacklogTable(report.getBacklog()));
+                top.addCell(left);
+                top.addCell(right);
+                document.add(top);
+
+                smallSection(document, "Overall Result");
+                document.add(combineOverallTable(report.getOverall()));
+
+                for (SECombineReportResponse.SemesterBlock block : report.getSemesters()) {
+                    smallSection(document, block.getSemesterDisplayName());
+                    document.add(combineSubjectTable(block.getSubjects()));
+                }
+
+                smallSection(document, "List of Topper Students");
+                PdfPTable toppers = new PdfPTable(3);
+                toppers.setWidthPercentage(100);
+                for (String h : List.of("Rank", "Name", "SGPA")) {
+                    toppers.addCell(smallHeader(h));
+                }
+                for (SECombineReportResponse.TopperRow t : report.getToppers()) {
+                    toppers.addCell(smallBody(String.valueOf(t.getRank())));
+                    toppers.addCell(smallBody(t.getName()));
+                    toppers.addCell(smallBody(String.valueOf(t.getSgpa())));
+                }
+                document.add(toppers);
+
+                // Signature blocks.
+                PdfPTable sign = new PdfPTable(3);
+                sign.setWidthPercentage(100);
+                sign.setSpacingBefore(30);
+                for (String h : List.of("Dept. Exam Coordinator", "HOD", "Principal")) {
+                    PdfPCell cell = smallBody(h);
+                    cell.setHorizontalAlignment(Element.ALIGN_CENTER);
+                    cell.setBorder(0);
+                    sign.addCell(cell);
+                }
+                document.add(sign);
+            }
+
+            addFooter(document);
+            document.close();
+        } catch (DocumentException e) {
+            throw new RuntimeException("Report generation failed", e);
+        }
+        return out.toByteArray();
+    }
+
+    // Distribution rows: label + count + %.
+    private PdfPTable combineDistTable(SECombineReportResponse.Distribution d) {
+        PdfPTable table = new PdfPTable(3);
+        table.setWidthPercentage(100);
+        for (String h : List.of("Class", "Count", "%")) {
+            table.addCell(smallHeader(h));
+        }
+        addDistRow(table, "Distinction", d.getDistinction());
+        addDistRow(table, "First Class", d.getFirstClass());
+        addDistRow(table, "Higher Second", d.getHigherSecond());
+        addDistRow(table, "Second Class", d.getSecondClass());
+        addDistRow(table, "Pass Class", d.getPassClass());
+        return table;
+    }
+
+    private void addDistRow(PdfPTable table, String label, SECombineReportResponse.CountPct row) {
+        table.addCell(smallBody(label));
+        table.addCell(smallBody(String.valueOf(row.getCount())));
+        table.addCell(smallBody(row.getPercentage() + "%"));
+    }
+
+    // Backlog rows: label + count.
+    private PdfPTable combineBacklogTable(SECombineReportResponse.Backlog b) {
+        PdfPTable table = new PdfPTable(2);
+        table.setWidthPercentage(100);
+        table.addCell(smallHeader("Failed In"));
+        table.addCell(smallHeader("Count"));
+        String[][] rows = {
+                {"1 Subject", String.valueOf(b.getFailedInOne())},
+                {"2 Subjects", String.valueOf(b.getFailedInTwo())},
+                {"3 Subjects", String.valueOf(b.getFailedInThree())},
+                {"4 Subjects", String.valueOf(b.getFailedInFour())},
+                {"5+ Subjects", String.valueOf(b.getFailedInFiveOrMore())},
+        };
+        for (String[] row : rows) {
+            table.addCell(smallBody(row[0]));
+            table.addCell(smallBody(row[1]));
+        }
+        return table;
+    }
+
+    // Overall rows: label + value.
+    private PdfPTable combineOverallTable(SECombineReportResponse.Overall o) {
+        PdfPTable table = new PdfPTable(2);
+        table.setWidthPercentage(100);
+        table.addCell(smallHeader("Metric"));
+        table.addCell(smallHeader("Value"));
+        String[][] rows = {
+                {"Total Appeared", String.valueOf(o.getTotalAppeared())},
+                {"All Clear", o.getAllClear() + " (" + o.getAllClearPct() + "%)"},
+                {"Quality (>= 6.75)", o.getQuality() + " (" + o.getQualityPct() + "%)"},
+                {"With ATKT", o.getWithAtkt() + " (" + o.getWithAtktPct() + "%)"},
+                {"Fail", o.getFail() + " (" + o.getFailPct() + "%)"},
+                {"Absent", String.valueOf(o.getAbsent())},
+        };
+        for (String[] row : rows) {
+            table.addCell(smallBody(row[0]));
+            table.addCell(smallBody(row[1]));
+        }
+        return table;
+    }
+
+    // 13-column subject table mirroring the Excel sheet.
+    private PdfPTable combineSubjectTable(List<SECombineReportResponse.SubjectRow> subjects) {
+        PdfPTable table = new PdfPTable(13);
+        table.setWidthPercentage(100);
+        for (String h : List.of("SN", "Subject Name", "Faculty", "On Roll", "Appeared",
+                "Passed", "Pass %", "Dist", "I Class", "H.II", "II Class", "Pass", "Highest")) {
+            table.addCell(smallHeader(h));
+        }
+        for (SECombineReportResponse.SubjectRow s : subjects) {
+            table.addCell(smallBody(String.valueOf(s.getSn())));
+            table.addCell(smallBody(s.getSubjectName()));
+            table.addCell(smallBody(s.getFacultyName()));
+            table.addCell(smallBody(String.valueOf(s.getOnRoll())));
+            table.addCell(smallBody(String.valueOf(s.getAppeared())));
+            table.addCell(smallBody(String.valueOf(s.getPassed())));
+            table.addCell(smallBody(s.getPassingPercentage() + "%"));
+            table.addCell(smallBody(String.valueOf(s.getDistinction())));
+            table.addCell(smallBody(String.valueOf(s.getFirstClass())));
+            table.addCell(smallBody(String.valueOf(s.getHigherSecond())));
+            table.addCell(smallBody(String.valueOf(s.getSecondClass())));
+            table.addCell(smallBody(String.valueOf(s.getPassClass())));
+            table.addCell(smallBody(s.getHighestMarks() == null ? "—" : String.valueOf(s.getHighestMarks())));
+        }
+        return table;
+    }
+
+    // Centered 12pt bold title for the combine report.
+    private void smallTitle(Document document, String text) throws DocumentException {
+        Paragraph p = new Paragraph(text, new Font(Font.HELVETICA, 12, Font.BOLD));
+        p.setAlignment(Element.ALIGN_CENTER);
+        p.setSpacingAfter(4);
+        document.add(p);
+    }
+
+    // Centered 10pt line.
+    private void smallCenter(Document document, String text) throws DocumentException {
+        Paragraph p = new Paragraph(text, new Font(Font.HELVETICA, 10));
+        p.setAlignment(Element.ALIGN_CENTER);
+        p.setSpacingAfter(2);
+        document.add(p);
+    }
+
+    // Plain 10pt paragraph.
+    private void smallParagraph(Document document, String text) throws DocumentException {
+        Paragraph p = new Paragraph(text, new Font(Font.HELVETICA, 10));
+        p.setSpacingAfter(4);
+        document.add(p);
+    }
+
+    // Left-aligned 12pt bold section header.
+    private void smallSection(Document document, String text) throws DocumentException {
+        Paragraph p = new Paragraph(text, new Font(Font.HELVETICA, 12, Font.BOLD));
+        p.setSpacingBefore(10);
+        p.setSpacingAfter(4);
+        document.add(p);
+    }
+
+    // Gray 10pt bold header cell.
+    private PdfPCell smallHeader(String text) {
+        PdfPCell cell = new PdfPCell(new Paragraph(text,
+                new Font(Font.HELVETICA, 10, Font.BOLD)));
+        styleCell(cell);
+        cell.setBackgroundColor(HEADER_BG);
+        return cell;
+    }
+
+    // Plain 10pt body cell.
+    private PdfPCell smallBody(String text) {
+        PdfPCell cell = new PdfPCell(new Paragraph(text == null ? "" : text,
+                new Font(Font.HELVETICA, 10)));
+        styleCell(cell);
+        return cell;
     }
 
     // Big centered title, 16pt Helvetica bold.

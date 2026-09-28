@@ -89,6 +89,25 @@ public class ReportController {
                 "institute-report-" + sessionId + "-" + year + "-" + semester + ".pdf");
     }
 
+    @GetMapping("/se-combine")
+    public ResponseEntity<byte[]> seCombine(
+            @RequestParam Long sessionId,
+            @RequestParam Long departmentId,
+            @RequestParam Integer year,
+            @RequestParam Integer semester) {
+        Long effectiveDeptId = hodScopedDepartmentId(departmentId);
+        AnalyticsFilterRequest filter = AnalyticsFilterRequest.builder()
+                .academicSessionId(sessionId)
+                .departmentId(effectiveDeptId)
+                .year(year)
+                .semester(semester)
+                .build();
+        byte[] pdf = reportService.generateSECombinePdf(filter);
+        log.info("Report generated: type={}, filters={}", "se-combine", filter);
+        return pdfResponse(pdf,
+                "SE-Combine-Report-" + sessionId + "-" + effectiveDeptId + ".pdf");
+    }
+
     // HODs always get their own department, whatever the query param says.
     private Long hodScopedDepartmentId(Long requestedDepartmentId) {
         User user = SecurityUtil.getCurrentUser();
