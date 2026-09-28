@@ -152,37 +152,46 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     // Demo faculty mappings so reports show real names instead of "—".
-    // Runs once (empty table only); admin can reassign later on the admin page.
+    // Runs when the table is empty; admin can reassign later on the admin page.
     private void seedSubjectFacultyMappings(Map<String, Department> departments) {
-        if (subjectFacultyRepository.count() > 0) {
-            return;
-        }
-        User faculty = userRepository.findByUsername("thvaishnav").orElse(null);
-        if (faculty == null) {
-            log.warn("Skipping subject-faculty seed: user 'thvaishnav' not found");
-            return;
-        }
-        AcademicSession session = sessionRepository.findByActive(true).stream()
-                .findFirst().orElse(null);
-        if (session == null) {
-            log.warn("Skipping subject-faculty seed: no active session");
-            return;
-        }
-        Department entc = departments.get("ENTC");
-        if (entc == null) {
-            return;
-        }
-        for (Subject subject : subjectRepository.findByDepartmentId(entc.getId())) {
-            if (subjectFacultyRepository
-                    .findBySubjectIdAndAcademicSessionId(subject.getId(), session.getId()).isPresent()) {
-                continue;
+        try {
+            long existing = subjectFacultyRepository.count();
+            log.info("SubjectFaculty rows on startup: {}", existing);
+            if (existing > 0) {
+                return;
             }
-            subjectFacultyRepository.save(SubjectFaculty.builder()
-                    .subject(subject)
-                    .faculty(faculty)
-                    .academicSession(session)
-                    .build());
-            log.info("Seeded faculty mapping: {} -> {}", subject.getCode(), faculty.getUsername());
+            User faculty = userRepository.findByUsername("thvaishnav").orElse(null);
+            if (faculty == null) {
+                log.warn("Skipping subject-faculty seed: user 'thvaishnav' not found");
+                return;
+            }
+            AcademicSession session = sessionRepository.findByActive(true).stream()
+                    .findFirst().orElse(null);
+            if (session == null) {
+                log.warn("Skipping subject-faculty seed: no active session");
+                return;
+            }
+            Department entc = departments.get("ENTC");
+            if (entc == null) {
+                log.warn("Skipping subject-faculty seed: ENTC department not found");
+                return;
+            }
+            int seeded = 0;
+            for (Subject subject : subjectRepository.findByDepartmentId(entc.getId())) {
+                if (subjectFacultyRepository
+                        .findBySubjectIdAndAcademicSessionId(subject.getId(), session.getId()).isPresent()) {
+                    continue;
+                }
+                subjectFacultyRepository.save(SubjectFaculty.builder()
+                        .subject(subject)
+                        .faculty(faculty)
+                        .academicSession(session)
+                        .build());
+                seeded++;
+            }
+            log.info("Seeded {} subject-faculty mappings", seeded);
+        } catch (Exception e) {
+            log.warn("Subject-faculty seeding failed, continuing startup", e);
         }
     }
 }
