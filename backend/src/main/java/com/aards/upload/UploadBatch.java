@@ -66,6 +66,10 @@ public class UploadBatch {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
+    // Short failure reason, shown on the upload screen when status is FAILED.
+    @Column(name = "error_message", length = 1000)
+    private String errorMessage;
+
     @PrePersist
     public void onCreate() {
         uploadedAt = LocalDateTime.now();

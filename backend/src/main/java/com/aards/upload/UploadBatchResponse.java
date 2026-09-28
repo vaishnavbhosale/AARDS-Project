@@ -25,4 +25,5 @@ public class UploadBatchResponse {
     private String uploadedByUsername;
     private String departmentName;
     private String academicSessionName;
+    private String message;
 }

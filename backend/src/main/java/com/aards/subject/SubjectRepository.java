@@ -11,4 +11,6 @@ public interface SubjectRepository extends JpaRepository<Subject, Long> {
             String code, Long departmentId, Integer year, Integer semester);
 
     List<Subject> findByDepartmentIdAndYearAndSemester(Long departmentId, Integer year, Integer semester);
+
+    List<Subject> findByDepartmentId(Long departmentId);
 }

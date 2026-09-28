@@ -50,10 +50,20 @@ export default function Upload() {
   const [fileError, setFileError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null);
+  const [processing, setProcessing] = useState(null);
+  const pollRef = useRef(null);
   const [uploads, setUploads] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState('');
 
+  function stopPolling() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }
+
+  // Stop polling if the user leaves the page mid-processing.
   async function loadUploads() {
     setLoadingList(true);
     setListError('');
@@ -69,6 +79,7 @@ export default function Upload() {
 
   useEffect(() => {
     loadUploads();
+    return () => stopPolling();
   }, []);
 
   function pickFile(selected) {
@@ -97,31 +108,67 @@ export default function Upload() {
     pickFile(e.dataTransfer.files[0]);
   }
 
+  // Background job finished: show the matching alert + action button.
+  function finishProcessing(batch) {
+    if (batch.status === 'VALIDATED') {
+      setResult({
+        type: 'success',
+        message: `PDF parsed successfully. ${batch.totalRecords} records saved.`,
+        batch,
+      });
+    } else if (batch.status === 'PARSED') {
+      setResult({
+        type: 'warning',
+        message: `Validation errors found (${batch.errorRecords}). Please review.`,
+        batch,
+      });
+    } else if (batch.status === 'FAILED') {
+      setResult({
+        type: 'error',
+        message: batch.message || 'Upload failed on the server.',
+        batch: null,
+      });
+    }
+    loadUploads();
+  }
+
   async function onUpload() {
     if (!file) return;
+    stopPolling();
     setUploading(true);
     setResult(null);
+    setProcessing(null);
     try {
+      // Returns immediately; the pipeline runs in the background.
       const batch = await uploadService.uploadPdf(file);
-      if (batch.status === 'VALIDATED') {
-        setResult({
-          type: 'success',
-          message: `PDF parsed successfully. ${batch.totalRecords} records saved.`,
-          batch,
-        });
-      } else if (batch.status === 'PARSED') {
-        setResult({
-          type: 'warning',
-          message: `Validation errors found (${batch.errorRecords}). Please review.`,
-          batch,
-        });
-      } else if (batch.status === 'FAILED') {
-        setResult({ type: 'error', message: 'Upload failed on the server.', batch: null });
-      } else {
-        setResult({ type: 'success', message: `Upload status: ${batch.status}`, batch });
-      }
       setFile(null);
-      await loadUploads();
+      const startedAt = Date.now();
+      setProcessing({ batchId: batch.id, status: batch.status, elapsed: 0 });
+      let ticks = 0;
+      pollRef.current = setInterval(async () => {
+        ticks += 1;
+        setProcessing((p) =>
+          p ? { ...p, elapsed: Math.floor((Date.now() - startedAt) / 1000) } : p
+        );
+        if (ticks % 2 !== 0) return;
+        try {
+          const latest = await uploadService.getUpload(batch.id);
+          setProcessing((p) => (p ? { ...p, status: latest.status } : p));
+          if (['VALIDATED', 'PARSED', 'FAILED'].includes(latest.status)) {
+            stopPolling();
+            setProcessing(null);
+            finishProcessing(latest);
+          }
+        } catch (err) {
+          stopPolling();
+          setProcessing(null);
+          setResult({
+            type: 'error',
+            message: err.response?.data?.message || 'Could not check upload status.',
+            batch: null,
+          });
+        }
+      }, 1000);
     } catch (err) {
       setResult({
         type: 'error',
@@ -196,6 +243,16 @@ export default function Upload() {
         </div>
 
         {uploading && <Loader />}
+
+        {processing && (
+          <div className="mt-4 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+            <div className="h-5 w-5 rounded-full border-2 border-blue-300 border-t-blue-600 animate-spin" />
+            <p className="text-sm text-blue-800">
+              Processing PDF... this may take a minute. ({processing.elapsed}s, status:{' '}
+              {processing.status})
+            </p>
+          </div>
+        )}
 
         {result && (
           <div className="mt-4 space-y-3">

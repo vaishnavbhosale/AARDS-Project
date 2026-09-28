@@ -24,23 +24,30 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// Uploads 1 student PDF as a COMP faculty member and checks the saved rows
-// are tagged with the faculty department + active session.
+// submitUpload returns at once; the pipeline finishes on a background thread.
+// No @Transactional here: the background thread cannot see uncommitted rows,
+// so this test commits setup and cleans up after itself.
 @SpringBootTest
-@Transactional
 class UploadServiceTest {
+
+    private static final Set<String> TERMINAL =
+            Set.of("VALIDATED", "PARSED", "FAILED");
 
     @Autowired
     private UploadService uploadService;
+
+    @Autowired
+    private UploadBatchRepository batchRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -116,43 +123,72 @@ class UploadServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "one.pdf", "application/pdf", pdfBytes);
 
-        UploadBatchResponse response = uploadService.processUpload(file, faculty);
+        // Returns immediately, before the background job finishes.
+        UploadBatchResponse submitted = uploadService.submitUpload(file, faculty);
 
-        assertNotNull(response.getId());
-        assertEquals(1, response.getTotalRecords());
-        assertEquals("VALIDATED", response.getStatus());
-        assertEquals("Computer Engineering", response.getDepartmentName());
-        assertEquals(active.getName(), response.getAcademicSessionName());
+        assertNotNull(submitted.getId());
+        assertTrue(submitted.getStatus().equals("UPLOADED")
+                || submitted.getStatus().equals("PARSING"));
 
-        // Student is tagged with the faculty department + year/sem from the record.
-        Student student = studentRepository.findByPrn("33334444A").orElseThrow();
-        assertEquals(comp.getId(), student.getDepartmentId());
-        assertEquals(1, student.getCurrentYear());
-        assertEquals(1, student.getCurrentSemester());
-        assertEquals(LocalDate.now().getYear(), student.getAdmissionYear());
+        // Wait (up to ~10s) for the background thread to finish.
+        UploadBatchResponse latest = null;
+        for (int i = 0; i < 20; i++) {
+            Thread.sleep(500);
+            latest = uploadService.getById(submitted.getId());
+            if (TERMINAL.contains(latest.getStatus())) {
+                break;
+            }
+        }
 
-        // Every result row uses the active session + record year/sem.
-        List<Result> results = resultRepository
-                .findByStudentIdAndAcademicSessionId(student.getId(), active.getId());
-        assertEquals(1, results.size());
-        assertEquals(1, results.get(0).getYear());
-        assertEquals(1, results.get(0).getSemester());
+        try {
+            assertNotNull(latest);
+            assertEquals("VALIDATED", latest.getStatus());
+            assertEquals(1, latest.getTotalRecords());
+            assertEquals("Computer Engineering", latest.getDepartmentName());
+            assertEquals(active.getName(), latest.getAcademicSessionName());
 
-        // Saved subject uses the list-page title, not the code.
-        Subject subject = subjectRepository
-                .findByCodeAndDepartmentIdAndYearAndSemester(
-                        "101011-1", comp.getId(), 1, 1)
-                .orElseThrow();
-        assertEquals("Engineering Mechanics", subject.getName());
+            // Student is tagged with the faculty department + year/sem from the record.
+            Student student = studentRepository.findByPrn("33334444A").orElseThrow();
+            assertEquals(comp.getId(), student.getDepartmentId());
+            assertEquals(1, student.getCurrentYear());
+            assertEquals(1, student.getCurrentSemester());
+            assertEquals(LocalDate.now().getYear(), student.getAdmissionYear());
 
-        // One semester row with the ledger SGPA and zero backlogs (grade P).
-        SemesterResult semesterResult = semesterResultRepository
-                .findByStudentIdAndAcademicSessionIdAndYearAndSemester(
-                        student.getId(), active.getId(), 1, 1)
-                .orElseThrow();
-        assertEquals(1, semesterResult.getSemester());
-        assertEquals(7.50, semesterResult.getSgpa());
-        assertEquals(0, semesterResult.getBacklogCount());
-        assertEquals(SemesterStatus.PASS, semesterResult.getStatus());
+            // Every result row uses the active session + record year/sem.
+            List<Result> results = resultRepository
+                    .findByStudentIdAndAcademicSessionId(student.getId(), active.getId());
+            assertEquals(1, results.size());
+            assertEquals(1, results.get(0).getYear());
+            assertEquals(1, results.get(0).getSemester());
+
+            // Saved subject uses the list-page title, not the code.
+            Subject subject = subjectRepository
+                    .findByCodeAndDepartmentIdAndYearAndSemester(
+                            "101011-1", comp.getId(), 1, 1)
+                    .orElseThrow();
+            assertEquals("Engineering Mechanics", subject.getName());
+
+            // One semester row with the ledger SGPA and zero backlogs (grade P).
+            SemesterResult semesterResult = semesterResultRepository
+                    .findByStudentIdAndAcademicSessionIdAndYearAndSemester(
+                            student.getId(), active.getId(), 1, 1)
+                    .orElseThrow();
+            assertEquals(1, semesterResult.getSemester());
+            assertEquals(7.50, semesterResult.getSgpa());
+            assertEquals(0, semesterResult.getBacklogCount());
+            assertEquals(SemesterStatus.PASS, semesterResult.getStatus());
+        } finally {
+            // Background thread commits on its own: delete what it saved.
+            studentRepository.findByPrn("33334444A").ifPresent(student -> {
+                resultRepository.deleteAll(resultRepository
+                        .findByStudentIdAndAcademicSessionId(student.getId(), active.getId()));
+                semesterResultRepository
+                        .findByStudentIdAndAcademicSessionIdAndYearAndSemester(
+                                student.getId(), active.getId(), 1, 1)
+                        .ifPresent(semesterResultRepository::delete);
+                studentRepository.delete(student);
+            });
+            batchRepository.deleteById(submitted.getId());
+        }
     }
 }

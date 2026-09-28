@@ -5,6 +5,7 @@ import com.aards.common.dto.ApiResponse;
 import com.aards.user.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,8 +34,9 @@ public class UploadController {
     public ResponseEntity<ApiResponse<UploadBatchResponse>> upload(@RequestParam("file") MultipartFile file) {
         log.info("Upload request received: {}", file.getOriginalFilename());
         User user = SecurityUtil.getCurrentUser();
-        UploadBatchResponse response = uploadService.processUpload(file, user);
-        return ResponseEntity.ok(ApiResponse.success("Upload completed successfully", response));
+        UploadBatchResponse response = uploadService.submitUpload(file, user);
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ApiResponse.success("Processing in background", response));
     }
 
     @GetMapping
