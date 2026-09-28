@@ -5,6 +5,8 @@ import com.aards.department.DepartmentRepository;
 import com.aards.session.AcademicSession;
 import com.aards.session.AcademicSessionRepository;
 import com.aards.subject.Subject;
+import com.aards.subject.SubjectFaculty;
+import com.aards.subject.SubjectFacultyRepository;
 import com.aards.subject.SubjectRepository;
 import com.aards.user.Role;
 import com.aards.user.User;
@@ -29,17 +31,20 @@ public class DataSeeder implements CommandLineRunner {
     private final UserRepository userRepository;
     private final DepartmentRepository departmentRepository;
     private final SubjectRepository subjectRepository;
+    private final SubjectFacultyRepository subjectFacultyRepository;
     private final AcademicSessionRepository sessionRepository;
     private final PasswordEncoder passwordEncoder;
 
     public DataSeeder(UserRepository userRepository,
                       DepartmentRepository departmentRepository,
                       SubjectRepository subjectRepository,
+                      SubjectFacultyRepository subjectFacultyRepository,
                       AcademicSessionRepository sessionRepository,
                       PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.departmentRepository = departmentRepository;
         this.subjectRepository = subjectRepository;
+        this.subjectFacultyRepository = subjectFacultyRepository;
         this.sessionRepository = sessionRepository;
         this.passwordEncoder = passwordEncoder;
     }
@@ -51,6 +56,7 @@ public class DataSeeder implements CommandLineRunner {
             Map<String, Department> departments = seedDepartments();
             seedSessions();
             seedSubjects(departments);
+            seedSubjectFacultyMappings(departments);
         } catch (Exception e) {
             // Never crash startup because of seed data.
             log.error("Data seeding failed, continuing startup", e);
@@ -142,6 +148,41 @@ public class DataSeeder implements CommandLineRunner {
                     .seeded(true)
                     .build());
             log.info("Seeded subject: {} for dept {}", subject.getCode(), dept.getCode());
+        }
+    }
+
+    // Demo faculty mappings so reports show real names instead of "—".
+    // Runs once (empty table only); admin can reassign later on the admin page.
+    private void seedSubjectFacultyMappings(Map<String, Department> departments) {
+        if (subjectFacultyRepository.count() > 0) {
+            return;
+        }
+        User faculty = userRepository.findByUsername("thvaishnav").orElse(null);
+        if (faculty == null) {
+            log.warn("Skipping subject-faculty seed: user 'thvaishnav' not found");
+            return;
+        }
+        AcademicSession session = sessionRepository.findByActive(true).stream()
+                .findFirst().orElse(null);
+        if (session == null) {
+            log.warn("Skipping subject-faculty seed: no active session");
+            return;
+        }
+        Department entc = departments.get("ENTC");
+        if (entc == null) {
+            return;
+        }
+        for (Subject subject : subjectRepository.findByDepartmentId(entc.getId())) {
+            if (subjectFacultyRepository
+                    .findBySubjectIdAndAcademicSessionId(subject.getId(), session.getId()).isPresent()) {
+                continue;
+            }
+            subjectFacultyRepository.save(SubjectFaculty.builder()
+                    .subject(subject)
+                    .faculty(faculty)
+                    .academicSession(session)
+                    .build());
+            log.info("Seeded faculty mapping: {} -> {}", subject.getCode(), faculty.getUsername());
         }
     }
 }
