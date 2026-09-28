@@ -25,6 +25,15 @@ public class ParsedRecord {
     @Builder.Default
     private String overallResult = "UNKNOWN";
 
+    // Official year result straight from the ledger ("SECOND YEAR Result : ...").
+    // Raw value exactly as printed (null when the block has no Result line),
+    // the year word (1-4, null when no year line found) and the year credit
+    // totals from the "Total Credits Earned : a/b" trailer (nullable).
+    private String officialResultRaw;
+    private Integer officialResultYear;
+    private Integer officialCreditsEarned;
+    private Integer officialTotalCredits;
+
     @Builder.Default
     private List<SubjectMark> marks = new ArrayList<>();
 

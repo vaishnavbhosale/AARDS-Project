@@ -1,6 +1,7 @@
 package com.aards.analytics;
 
 import com.aards.analytics.dto.AnalyticsFilterRequest;
+import com.aards.analytics.dto.SECombineReconciliationRow;
 import com.aards.department.DepartmentRepository;
 import com.aards.report.dto.SECombineReportResponse;
 import com.aards.result.Result;
@@ -14,6 +15,9 @@ import com.aards.student.StudentRepository;
 import com.aards.subject.Subject;
 import com.aards.subject.SubjectFacultyRepository;
 import com.aards.subject.SubjectRepository;
+import com.aards.yearresult.YearResult;
+import com.aards.yearresult.YearResultRepository;
+import com.aards.yearresult.YearResultStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -43,14 +47,16 @@ public class SECombineReportService {
     private final SubjectFacultyRepository subjectFacultyRepository;
     private final DepartmentRepository departmentRepository;
     private final AcademicSessionRepository sessionRepository;
+    private final YearResultRepository yearResultRepository;
 
     public SECombineReportService(SemesterResultRepository semesterResultRepository,
-                                  ResultRepository resultRepository,
-                                  StudentRepository studentRepository,
-                                  SubjectRepository subjectRepository,
-                                  SubjectFacultyRepository subjectFacultyRepository,
-                                  DepartmentRepository departmentRepository,
-                                  AcademicSessionRepository sessionRepository) {
+                                   ResultRepository resultRepository,
+                                   StudentRepository studentRepository,
+                                   SubjectRepository subjectRepository,
+                                   SubjectFacultyRepository subjectFacultyRepository,
+                                   DepartmentRepository departmentRepository,
+                                   AcademicSessionRepository sessionRepository,
+                                   YearResultRepository yearResultRepository) {
         this.semesterResultRepository = semesterResultRepository;
         this.resultRepository = resultRepository;
         this.studentRepository = studentRepository;
@@ -58,6 +64,7 @@ public class SECombineReportService {
         this.subjectFacultyRepository = subjectFacultyRepository;
         this.departmentRepository = departmentRepository;
         this.sessionRepository = sessionRepository;
+        this.yearResultRepository = yearResultRepository;
     }
 
     @Transactional(readOnly = true)
@@ -65,100 +72,24 @@ public class SECombineReportService {
         log.info("SE Combine Report generated: session={}, dept={}, year={}",
                 filter.getAcademicSessionId(), filter.getDepartmentId(), filter.getYear());
 
-        int semA = filter.getYear() * 2 - 1;
-        int semB = filter.getYear() * 2;
+        CombineInputs inputs = loadCombineInputs(filter);
+        List<StudentSummary> summaries = inputs.summaries();
+        List<Result> allResults = inputs.allResults();
+        int semA = inputs.semA();
+        int semB = inputs.semB();
 
-        // a. Semester rows for both semesters, grouped per student.
-        Map<Long, Double> sgpaA = new HashMap<>();
-        Map<Long, Double> sgpaB = new HashMap<>();
-        for (SemesterResult r : semesterResultRepository
-                .findByAcademicSessionIdAndYearAndSemester(
-                        filter.getAcademicSessionId(), filter.getYear(), semA)) {
-            sgpaA.put(r.getStudentId(), r.getSgpa());
-        }
-        for (SemesterResult r : semesterResultRepository
-                .findByAcademicSessionIdAndYearAndSemester(
-                        filter.getAcademicSessionId(), filter.getYear(), semB)) {
-            sgpaB.put(r.getStudentId(), r.getSgpa());
-        }
-
-        // b. All results of this department for the year, grouped per student.
-        List<Result> allResults = resultRepository
-                .findByAcademicSessionIdAndYearAndStudent_DepartmentId(
-                        filter.getAcademicSessionId(), filter.getYear(), filter.getDepartmentId());
-        Map<Long, List<Result>> resultsByStudent = allResults.stream()
-                .collect(Collectors.groupingBy(r -> r.getStudent().getId()));
-
-        // b2. Year credit frame: distinct subjects per semester and their credits.
-        // SPPU fail rule = earned credits below half of this total (SE: 44 -> 22).
-        Map<Long, Subject> subjectById = subjectRepository.findAllById(allResults.stream()
-                        .map(r -> r.getSubject().getId()).collect(Collectors.toSet())).stream()
-                .collect(Collectors.toMap(Subject::getId, s -> s));
-        Map<Integer, Set<Long>> subjectIdsBySemester = new HashMap<>();
-        for (Result r : allResults) {
-            if (r.getSemester() != null) {
-                subjectIdsBySemester
-                        .computeIfAbsent(r.getSemester(), k -> new HashSet<>())
-                        .add(r.getSubject().getId());
-            }
-        }
-        int maxCredits = subjectIdsBySemester.values().stream()
-                .flatMap(Set::stream)
-                .mapToInt(id -> creditsOf(subjectById.get(id)))
-                .sum();
-        double failThreshold = maxCredits * 0.5;
-
-        // c. One summary per student.
-        Set<Long> studentIds = new HashSet<>();
-        studentIds.addAll(sgpaA.keySet());
-        studentIds.addAll(sgpaB.keySet());
-        studentIds.addAll(resultsByStudent.keySet());
-        Map<Long, Student> students = studentRepository.findAllById(studentIds).stream()
-                .collect(Collectors.toMap(Student::getId, s -> s));
-
-        List<StudentSummary> summaries = new ArrayList<>();
-        for (Long studentId : studentIds) {
-            Student student = students.get(studentId);
-            if (student == null) {
-                continue;
-            }
-            List<Double> sgpas = new ArrayList<>();
-            if (sgpaA.get(studentId) != null) {
-                sgpas.add(sgpaA.get(studentId));
-            }
-            if (sgpaB.get(studentId) != null) {
-                sgpas.add(sgpaB.get(studentId));
-            }
-            // Both semesters null (ATKT ledger shows "----"): fall back to the
-            // latest prior-year SGPA so the student stays in distribution.
-            // Null survives only when no prior SGPA exists (unclassified).
-            Double avgSgpa;
-            if (sgpas.isEmpty()) {
-                avgSgpa = fallbackSgpa(studentId, filter.getAcademicSessionId(), filter.getYear());
-            } else {
-                avgSgpa = sgpas.stream().mapToDouble(Double::doubleValue).average().orElse(0);
-            }
-            List<Result> rows = resultsByStudent.getOrDefault(studentId, List.of());
-            long backlogCount = rows.stream().filter(r -> r.getStatus() == ResultStatus.FAIL).count();
-            long passedSubjectCount = rows.stream().filter(r -> r.getStatus() == ResultStatus.PASS).count();
-            // Credits earned = credits of passed subjects only.
-            long creditsEarned = rows.stream()
-                    .filter(r -> r.getStatus() == ResultStatus.PASS)
-                    .mapToLong(r -> creditsOf(subjectById.get(r.getSubject().getId())))
-                    .sum();
-            double totalMarks = rows.stream()
-                    .mapToDouble(r -> r.getMarksObtained() == null ? 0 : r.getMarksObtained()).sum();
-            summaries.add(new StudentSummary(student, avgSgpa, backlogCount,
-                    passedSubjectCount, creditsEarned, totalMarks));
-        }
-
-        long total = summaries.size();
+        long onRoll = summaries.size();
+        long absent = summaries.stream()
+                .filter(s -> s.finalStatus == YearResultStatus.ABSENT).count();
+        // Appeared excludes wholly-absent students; with no absent students
+        // this equals On Roll (matches the ledger's own Appeared total).
+        long total = onRoll - absent;
         List<StudentSummary> withAvg = summaries.stream()
                 .filter(s -> s.avgSgpa != null).toList();
         // Distribution covers all-clear students only (ATKT students live in
         // the backlog table). Bands must add up to All Clear.
         List<StudentSummary> clearWithAvg = withAvg.stream()
-                .filter(s -> s.backlogCount == 0).toList();
+                .filter(s -> s.finalStatus == YearResultStatus.ALL_CLEAR).toList();
 
         // d. Distribution bands on avg SGPA. Null averages (no SGPA anywhere)
         // go to the unclassified bucket instead of vanishing from totals.
@@ -176,16 +107,19 @@ public class SECombineReportService {
         long failedInFour = countBacklogs(summaries, 4);
         long failedInFiveOrMore = summaries.stream().filter(s -> s.backlogCount >= 5).count();
 
-        // f. Overall summary. Quality is a subset of All Clear. Fail follows
-        // the SPPU credits rule: earned below half of the year's max credits.
-        // ATKT = backlogs but still above that line.
-        long allClear = summaries.stream().filter(s -> s.backlogCount == 0).count();
+        // f. Overall summary from the final per-student classification.
+        // Official ledger result wins; the credit rule below runs only as an
+        // explicit fallback for students without a recognized official result.
+        // Absent counts wholly-absent students, never ABSENT subject rows.
+        long allClear = summaries.stream()
+                .filter(s -> s.finalStatus == YearResultStatus.ALL_CLEAR).count();
         long quality = summaries.stream()
-                .filter(s -> s.backlogCount == 0 && s.avgSgpa != null && s.avgSgpa >= 6.75).count();
+                .filter(s -> s.finalStatus == YearResultStatus.ALL_CLEAR
+                        && s.avgSgpa != null && s.avgSgpa >= 6.75).count();
         long withAtkt = summaries.stream()
-                .filter(s -> s.backlogCount >= 1 && s.creditsEarned >= failThreshold).count();
-        long fail = summaries.stream().filter(s -> s.creditsEarned < failThreshold).count();
-        long absent = allResults.stream().filter(r -> r.getStatus() == ResultStatus.ABSENT).count();
+                .filter(s -> s.finalStatus == YearResultStatus.ATKT).count();
+        long fail = summaries.stream()
+                .filter(s -> s.finalStatus == YearResultStatus.FAIL).count();
 
         // g. Subject tables, Semester II first to match the Excel sheet.
         List<SECombineReportResponse.SemesterBlock> semesters = List.of(
@@ -253,6 +187,160 @@ public class SECombineReportService {
                 .semesters(semesters)
                 .toppers(toppers)
                 .build();
+    }
+
+    // Test/debug support only (never called by controllers or the PDF path):
+    // one trace row per student with the raw official result, the normalized
+    // value, appeared status, final classification and fallback flag.
+    // Returns data; printing happens in tests, never in production code.
+    @Transactional(readOnly = true)
+    public List<SECombineReconciliationRow> reconcileSECombine(AnalyticsFilterRequest filter) {
+        return loadCombineInputs(filter).summaries().stream()
+                .map(s -> SECombineReconciliationRow.builder()
+                        .prn(s.student.getPrn())
+                        .rawOfficialResult(s.officialRaw)
+                        .normalizedOfficialResult(s.officialStatus)
+                        .appeared(s.finalStatus != YearResultStatus.ABSENT)
+                        .finalClassification(s.finalStatus)
+                        .fallbackUsed(s.fallbackUsed)
+                        .build())
+                .sorted(Comparator.comparing(SECombineReconciliationRow::getPrn,
+                        Comparator.nullsLast(String::compareTo)))
+                .toList();
+    }
+
+    // Steps a-c of the report: semester SGPA maps, year results, credit
+    // frame and one classified summary per student. Shared by the report
+    // and the test-only reconciliation so both use identical numbers.
+    private CombineInputs loadCombineInputs(AnalyticsFilterRequest filter) {
+        int semA = filter.getYear() * 2 - 1;
+        int semB = filter.getYear() * 2;
+
+        // a. Semester rows for both semesters, grouped per student.
+        Map<Long, Double> sgpaA = new HashMap<>();
+        Map<Long, Double> sgpaB = new HashMap<>();
+        for (SemesterResult r : semesterResultRepository
+                .findByAcademicSessionIdAndYearAndSemester(
+                        filter.getAcademicSessionId(), filter.getYear(), semA)) {
+            sgpaA.put(r.getStudentId(), r.getSgpa());
+        }
+        for (SemesterResult r : semesterResultRepository
+                .findByAcademicSessionIdAndYearAndSemester(
+                        filter.getAcademicSessionId(), filter.getYear(), semB)) {
+            sgpaB.put(r.getStudentId(), r.getSgpa());
+        }
+
+        // b. All results of this department for the year, grouped per student.
+        List<Result> allResults = resultRepository
+                .findByAcademicSessionIdAndYearAndStudent_DepartmentId(
+                        filter.getAcademicSessionId(), filter.getYear(), filter.getDepartmentId());
+        Map<Long, List<Result>> resultsByStudent = allResults.stream()
+                .collect(Collectors.groupingBy(r -> r.getStudent().getId()));
+
+        // b2. Year credit frame: distinct subjects per semester and their credits.
+        // SPPU fail rule = earned credits below half of this total (SE: 44 -> 22).
+        Map<Long, Subject> subjectById = subjectRepository.findAllById(allResults.stream()
+                        .map(r -> r.getSubject().getId()).collect(Collectors.toSet())).stream()
+                .collect(Collectors.toMap(Subject::getId, s -> s));
+        Map<Integer, Set<Long>> subjectIdsBySemester = new HashMap<>();
+        for (Result r : allResults) {
+            if (r.getSemester() != null) {
+                subjectIdsBySemester
+                        .computeIfAbsent(r.getSemester(), k -> new HashSet<>())
+                        .add(r.getSubject().getId());
+            }
+        }
+        int maxCredits = subjectIdsBySemester.values().stream()
+                .flatMap(Set::stream)
+                .mapToInt(id -> creditsOf(subjectById.get(id)))
+                .sum();
+        double failThreshold = maxCredits * 0.5;
+
+        // c. One summary per student.
+        Set<Long> studentIds = new HashSet<>();
+        studentIds.addAll(sgpaA.keySet());
+        studentIds.addAll(sgpaB.keySet());
+        studentIds.addAll(resultsByStudent.keySet());
+        Map<Long, Student> students = studentRepository.findAllById(studentIds).stream()
+                .collect(Collectors.toMap(Student::getId, s -> s));
+
+        // c2. Official year results for this session+year, keyed per student.
+        // Missing rows and UNKNOWN statuses both mean "no recognized official
+        // result": those students use the explicit credit fallback below.
+        Map<Long, YearResult> officialByStudent = yearResultRepository
+                .findByAcademicSessionIdAndYear(filter.getAcademicSessionId(), filter.getYear())
+                .stream().collect(Collectors.toMap(YearResult::getStudentId, y -> y, (a, b) -> a));
+
+        List<StudentSummary> summaries = new ArrayList<>();
+        for (Long studentId : studentIds) {
+            Student student = students.get(studentId);
+            if (student == null) {
+                continue;
+            }
+            List<Double> sgpas = new ArrayList<>();
+            if (sgpaA.get(studentId) != null) {
+                sgpas.add(sgpaA.get(studentId));
+            }
+            if (sgpaB.get(studentId) != null) {
+                sgpas.add(sgpaB.get(studentId));
+            }
+            // Both semesters null (ATKT ledger shows "----"): fall back to the
+            // latest prior-year SGPA so the student stays in distribution.
+            // Null survives only when no prior SGPA exists (unclassified).
+            Double avgSgpa;
+            if (sgpas.isEmpty()) {
+                avgSgpa = fallbackSgpa(studentId, filter.getAcademicSessionId(), filter.getYear());
+            } else {
+                avgSgpa = sgpas.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            }
+            List<Result> rows = resultsByStudent.getOrDefault(studentId, List.of());
+            long backlogCount = rows.stream().filter(r -> r.getStatus() == ResultStatus.FAIL).count();
+            long passedSubjectCount = rows.stream().filter(r -> r.getStatus() == ResultStatus.PASS).count();
+            // Credits earned = credits of passed subjects only.
+            long creditsEarned = rows.stream()
+                    .filter(r -> r.getStatus() == ResultStatus.PASS)
+                    .mapToLong(r -> creditsOf(subjectById.get(r.getSubject().getId())))
+                    .sum();
+            double totalMarks = rows.stream()
+                    .mapToDouble(r -> r.getMarksObtained() == null ? 0 : r.getMarksObtained()).sum();
+            summaries.add(classifyStudent(student, rows, avgSgpa, backlogCount,
+                    passedSubjectCount, creditsEarned, totalMarks,
+                    officialByStudent.get(studentId), failThreshold));
+        }
+        return new CombineInputs(summaries, allResults, semA, semB);
+    }
+
+    // Final student classification. The ledger's official year result is
+    // authoritative when present and recognized. Otherwise the pre-existing
+    // credit/backlog rule runs as an explicit fallback; a student with no
+    // appeared subject at all (every row AAA/AB) is ABSENT. One AAA row
+    // never makes a student absent on its own.
+    private StudentSummary classifyStudent(Student student, List<Result> rows, Double avgSgpa,
+                                            long backlogCount, long passedSubjectCount, long creditsEarned,
+                                            double totalMarks, YearResult official, double failThreshold) {
+        YearResultStatus officialStatus = official == null ? null : official.getStatus();
+        String officialRaw = official == null ? null : official.getOfficialResultRaw();
+        if (officialStatus != null && officialStatus != YearResultStatus.UNKNOWN) {
+            return new StudentSummary(student, avgSgpa, backlogCount, passedSubjectCount,
+                    creditsEarned, totalMarks, officialStatus, false, officialStatus, officialRaw);
+        }
+        if (officialStatus == YearResultStatus.UNKNOWN && officialRaw != null) {
+            log.warn("Unrecognized official year result '{}' for student {}, using fallback",
+                    officialRaw, student.getPrn());
+        }
+        boolean anyAppeared = rows.stream().anyMatch(r -> r.getStatus() != ResultStatus.ABSENT);
+        YearResultStatus fallback;
+        if (!rows.isEmpty() && !anyAppeared) {
+            fallback = YearResultStatus.ABSENT;
+        } else if (creditsEarned < failThreshold) {
+            fallback = YearResultStatus.FAIL;
+        } else if (backlogCount >= 1) {
+            fallback = YearResultStatus.ATKT;
+        } else {
+            fallback = YearResultStatus.ALL_CLEAR;
+        }
+        return new StudentSummary(student, avgSgpa, backlogCount, passedSubjectCount,
+                creditsEarned, totalMarks, fallback, true, officialStatus, officialRaw);
     }
 
     // One subject table: rows grouped by subject, ordered by code.
@@ -382,7 +470,8 @@ public class SECombineReportService {
         };
     }
 
-    // One student averaged across both semesters.
+    // One student averaged across both semesters, with the final
+    // official-first classification attached.
     private static class StudentSummary {
         final Student student;
         final Double avgSgpa;
@@ -390,16 +479,31 @@ public class SECombineReportService {
         final long passedSubjectCount;
         final long creditsEarned;
         final double totalMarks;
+        final YearResultStatus finalStatus;
+        final boolean fallbackUsed;
+        final YearResultStatus officialStatus;
+        final String officialRaw;
 
         StudentSummary(Student student, Double avgSgpa, long backlogCount,
-                       long passedSubjectCount, long creditsEarned, double totalMarks) {
+                       long passedSubjectCount, long creditsEarned, double totalMarks,
+                       YearResultStatus finalStatus, boolean fallbackUsed,
+                       YearResultStatus officialStatus, String officialRaw) {
             this.student = student;
             this.avgSgpa = avgSgpa;
             this.backlogCount = backlogCount;
             this.passedSubjectCount = passedSubjectCount;
             this.creditsEarned = creditsEarned;
             this.totalMarks = totalMarks;
+            this.finalStatus = finalStatus;
+            this.fallbackUsed = fallbackUsed;
+            this.officialStatus = officialStatus;
+            this.officialRaw = officialRaw;
         }
+    }
+
+    // Loaded inputs shared by the report and the reconciliation.
+    private record CombineInputs(List<StudentSummary> summaries, List<Result> allResults,
+                                 int semA, int semB) {
     }
 
     // Subject credits, 0 when unknown. Never null.

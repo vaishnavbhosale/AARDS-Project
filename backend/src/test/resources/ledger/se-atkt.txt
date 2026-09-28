@@ -1,0 +1,10 @@
+PRN: 724290002  SEAT NO.: S500891002  NAME: FIXTURE ATKT  Mother's Name :- FIXTURE MOTHER
+SEMESTER:  3
+PCC-201-ETC  P 024 * 033 --- --- --- --- --- --- --- --- --- --- 057  3  3  B+  7  21
+PCC-202-ETC  P 023 * 032 --- --- --- --- --- --- --- --- --- --- 055  3  3  B+  7  21
+Third Semester SGPA : 8.09  Credits Earned/Total : 22/22  Total Credit Points: 178
+SEMESTER:  4
+PCC-251-ETC  * 026 * 041 --- --- --- --- --- --- --- --- --- --- 067  2  2  A  8  16
+PCC-252-ETC  * 017 * 013 --- --- --- --- --- --- --- --- --- --- 030 FFF  3  0  F  0  0
+Fourth Semester SGPA : 8.55  Credits Earned/Total : 22/22  Total Credit Points: 188
+SECOND YEAR Result : Fail A.T.K.T.  Total Credits Earned : 38/44

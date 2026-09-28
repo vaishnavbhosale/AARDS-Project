@@ -1,0 +1,10 @@
+PRN: 724290004  SEAT NO.: S500891004  NAME: FIXTURE ABSENT  Mother's Name :- FIXTURE MOTHER
+SEMESTER:  3
+PCC-201-ETC  * AAA  * 000 --- --- --- --- --- --- --- --- --- --- 000 FFF  3  0  F  0  0
+PCC-202-ETC  * AAA  * 000 --- --- --- --- --- --- --- --- --- --- 000 FFF  3  0  F  0  0
+Third Semester SGPA : ----- Credits Earned/Total : 0/22 Total Credit Points: 0
+SEMESTER:  4
+PCC-251-ETC  * AAA  * 000 --- --- --- --- --- --- --- --- --- --- 000 FFF  2  0  F  0  0
+PCC-252-ETC  * AAA  * 000 --- --- --- --- --- --- --- --- --- --- 000 FFF  3  0  F  0  0
+Fourth Semester SGPA : ----- Credits Earned/Total : 0/22 Total Credit Points: 0
+SECOND YEAR Total Credits Earned : 0/44

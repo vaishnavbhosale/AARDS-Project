@@ -1,0 +1,10 @@
+PRN: 724290003  SEAT NO.: S500891003  NAME: FIXTURE FAIL  Mother's Name :- FIXTURE MOTHER
+SEMESTER:  3
+PCC-201-ETC  P 018  * 039 --- --- --- --- --- --- --- --- --- --- 057  3  3  B+  7  21
+PCC-202-ETC  * 012  * 023 --- --- --- --- --- --- --- --- --- --- 035 FFF  3  0  F  0  0
+Third Semester SGPA : ----- Credits Earned/Total : 13/22 Total Credit Points: 100
+SEMESTER:  4
+PCC-251-ETC  * 015  * 033 --- --- --- --- --- --- --- --- --- --- 048  2  2  C  5  10
+PCC-252-ETC  * 013  * 001 --- --- --- --- --- --- --- --- --- --- 014 FFF  3  0  F  0  0
+Fourth Semester SGPA : ----- Credits Earned/Total : 6/22 Total Credit Points: 50
+SECOND YEAR Result : Fail   Total Credits Earned : 19/44

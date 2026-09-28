@@ -23,6 +23,9 @@ import com.aards.user.repository.UserRepository;
 import com.aards.validation.ValidationError;
 import com.aards.validation.ValidationErrorRepository;
 import com.aards.validation.ValidationService;
+import com.aards.yearresult.YearResult;
+import com.aards.yearresult.YearResultRepository;
+import com.aards.yearresult.YearResultStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
@@ -59,20 +62,22 @@ public class UploadService {
     private final UserRepository userRepository;
     // Self-reference through the Spring proxy so @Async actually runs in background.
     private final UploadService self;
+    private final YearResultRepository yearResultRepository;
 
     public UploadService(FileStorageService fileStorageService,
-                         ParserService parserService,
-                         ValidationService validationService,
-                         UploadBatchRepository batchRepository,
-                         ValidationErrorRepository errorRepository,
-                         StudentRepository studentRepository,
-                         SubjectRepository subjectRepository,
-                         ResultRepository resultRepository,
-                         SemesterResultRepository semesterResultRepository,
-                         AcademicSessionRepository sessionRepository,
-                         DepartmentRepository departmentRepository,
-                         UserRepository userRepository,
-                         @Lazy UploadService self) {
+                          ParserService parserService,
+                          ValidationService validationService,
+                          UploadBatchRepository batchRepository,
+                          ValidationErrorRepository errorRepository,
+                          StudentRepository studentRepository,
+                          SubjectRepository subjectRepository,
+                          ResultRepository resultRepository,
+                          SemesterResultRepository semesterResultRepository,
+                          AcademicSessionRepository sessionRepository,
+                          DepartmentRepository departmentRepository,
+                          UserRepository userRepository,
+                          @Lazy UploadService self,
+                          YearResultRepository yearResultRepository) {
         this.fileStorageService = fileStorageService;
         this.parserService = parserService;
         this.validationService = validationService;
@@ -86,6 +91,7 @@ public class UploadService {
         this.departmentRepository = departmentRepository;
         this.userRepository = userRepository;
         this.self = self;
+        this.yearResultRepository = yearResultRepository;
     }
 
     // Fast checks that fail immediately (bad file, missing setup).
@@ -469,6 +475,57 @@ public class UploadService {
             }
         }
         semesterResultRepository.saveAll(semesterResults);
+
+        // 5. YearResults: the ledger's official year result per (student, year).
+        // Persisted verbatim (raw) plus normalized; UNKNOWN when the block
+        // carried no recognized official result (reports fall back explicitly).
+        Map<String, List<RecordWork>> byYear = new LinkedHashMap<>();
+        for (RecordWork w : work) {
+            for (int sem : w.bySemester.keySet()) {
+                int year = (sem + 1) / 2;
+                byYear.computeIfAbsent(String.valueOf(year), k -> new ArrayList<>()).add(w);
+            }
+        }
+        List<YearResult> yearResults = new ArrayList<>();
+        for (Map.Entry<String, List<RecordWork>> bucket : byYear.entrySet()) {
+            int year = Integer.parseInt(bucket.getKey());
+            Map<Long, YearResult> existingByStudent = new LinkedHashMap<>();
+            for (YearResult yr : yearResultRepository
+                    .findByAcademicSessionIdAndYear(session.getId(), year)) {
+                existingByStudent.putIfAbsent(yr.getStudentId(), yr);
+            }
+            for (RecordWork w : bucket.getValue()) {
+                final int finalYear = year;
+                YearResult yearResult = existingByStudent.computeIfAbsent(
+                        w.student.getId(), studentId -> {
+                            YearResult created = YearResult.builder()
+                                    .studentId(studentId)
+                                    .academicSessionId(session.getId())
+                                    .year(finalYear)
+                                    .build();
+                            yearResults.add(created);
+                            return created;
+                        });
+                String raw = w.record.getOfficialResultRaw();
+                YearResultStatus status = YearResultStatus.fromLedger(
+                        raw, w.record.getOfficialCreditsEarned(), w.record.getOfficialTotalCredits());
+                yearResult.setOfficialResultRaw(raw);
+                yearResult.setStatus(status);
+                if (status == YearResultStatus.UNKNOWN) {
+                    if (raw != null) {
+                        log.warn("Unrecognized official year result '{}' for PRN {}, stored as UNKNOWN",
+                                raw, w.record.getPrn());
+                    } else {
+                        log.debug("No official year result for PRN {}, stored as UNKNOWN",
+                                w.record.getPrn());
+                    }
+                }
+                if (!yearResults.contains(yearResult)) {
+                    yearResults.add(yearResult);
+                }
+            }
+        }
+        yearResultRepository.saveAll(yearResults);
 
         // Cleanup: drop auto-created subjects nobody references. Seeded demo
         // rows are never touched.

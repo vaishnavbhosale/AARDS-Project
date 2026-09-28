@@ -1,6 +1,7 @@
 package com.aards.parser;
 
 import com.aards.parser.service.OcrService;
+import com.aards.yearresult.YearResultStatus;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.slf4j.Logger;
@@ -33,7 +34,14 @@ public class ParserService {
     private static final String SE_SUBJECT_HEAD_PATTERN = "^([A-Z]{2,3}-?\\d{3}[A-Z]?(?:-?[A-Z]{2,3})?)\\s+(.+)$";
     private static final String SGPA_PATTERN = "(First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth)\\s+Semester\\s+SGPA\\s*:\\s*([0-9.]+|\\-\\-\\-)";
     private static final String CREDITS_PATTERN = "Credits\\s+Earned/Total\\s*:\\s*(\\d+)/(\\d+)";
-    private static final String RESULT_PATTERN = "(?i)(First|Second|Third|Fourth)\\s+Year\\s+(?:Result\\s*:\\s*(Pass|Fail(?:\\s+A\\.T\\.K\\.T\\.)?)|Total\\s+Credits\\s+Earned)";
+    // Official year result, value captured verbatim (never assumed).
+    // "SECOND YEAR Result : Fail A.T.K.T.   Total Credits Earned : 38/44"
+    // All-clear blocks print no Result value, only the credit trailer:
+    // "SECOND YEAR Total Credits Earned : 44/44".
+    private static final String YEAR_RESULT_PATTERN =
+            "(?i)(First|Second|Third|Fourth)\\s+Year\\s+Result\\s*:\\s*(.*?)(?:\\s+Total\\s+Credits\\s+Earned\\s*:\\s*(\\d+)\\s*/\\s*(\\d+))?\\s*$";
+    private static final String YEAR_TOTAL_PATTERN =
+            "(?i)(First|Second|Third|Fourth)\\s+Year\\s+Total\\s+Credits\\s+Earned\\s*:\\s*(\\d+)\\s*/\\s*(\\d+)";
     private static final String GRADE_PATTERN = "\\b(O|A\\+|A|B\\+|B|C|D|P|F|FFF)\\b";
     private static final String TOTAL_POINTS_PATTERN = "Total Credit Points\\s*:\\s*(\\d+)";
     // First-page subject list: code, optional suffix, repeated code, title.
@@ -55,7 +63,8 @@ public class ParserService {
     private static final Pattern SE_SUBJECT_HEAD_REGEX = Pattern.compile(SE_SUBJECT_HEAD_PATTERN);
     private static final Pattern SGPA_REGEX = Pattern.compile(SGPA_PATTERN);
     private static final Pattern CREDITS_REGEX = Pattern.compile(CREDITS_PATTERN);
-    private static final Pattern RESULT_REGEX = Pattern.compile(RESULT_PATTERN);
+    private static final Pattern YEAR_RESULT_REGEX = Pattern.compile(YEAR_RESULT_PATTERN);
+    private static final Pattern YEAR_TOTAL_REGEX = Pattern.compile(YEAR_TOTAL_PATTERN);
     private static final Pattern GRADE_REGEX = Pattern.compile("^" + GRADE_PATTERN + "$");
     private static final Pattern TOTAL_POINTS_REGEX = Pattern.compile(TOTAL_POINTS_PATTERN);
     private static final Pattern SUBJECT_LIST_REGEX = Pattern.compile(SUBJECT_LIST_PATTERN);
@@ -173,12 +182,28 @@ public class ParserService {
                         .build());
                 continue;
             }
-            Matcher resultMatcher = RESULT_REGEX.matcher(line);
-            if (resultMatcher.find()) {
-                // Group 1 is the year word, group 2 is the outcome (null for credit lines).
-                String outcome = resultMatcher.group(2);
-                current.setOverallResult(
-                        outcome == null || outcome.equalsIgnoreCase("Pass") ? "PASS" : "FAIL");
+            Matcher yearResultMatcher = YEAR_RESULT_REGEX.matcher(line);
+            if (yearResultMatcher.find()) {
+                // A Result line wins over any Total-only line in the block.
+                current.setOfficialResultYear(yearWordToInt(yearResultMatcher.group(1)));
+                String raw = yearResultMatcher.group(2) == null
+                        ? null : yearResultMatcher.group(2).trim();
+                current.setOfficialResultRaw(raw == null || raw.isEmpty() ? null : raw);
+                current.setOfficialCreditsEarned(parseIntOrNull(yearResultMatcher.group(3)));
+                current.setOfficialTotalCredits(parseIntOrNull(yearResultMatcher.group(4)));
+                current.setOverallResult(coarseOverall(current));
+                continue;
+            }
+            Matcher yearTotalMatcher = YEAR_TOTAL_REGEX.matcher(line);
+            if (yearTotalMatcher.find()
+                    && current.getOfficialResultRaw() == null
+                    && current.getOfficialResultYear() == null) {
+                // Total-only trailer, no Result value printed (the all-clear
+                // encoding). Never overwrites a Result line seen earlier.
+                current.setOfficialResultYear(yearWordToInt(yearTotalMatcher.group(1)));
+                current.setOfficialCreditsEarned(parseIntOrNull(yearTotalMatcher.group(2)));
+                current.setOfficialTotalCredits(parseIntOrNull(yearTotalMatcher.group(3)));
+                current.setOverallResult(coarseOverall(current));
             }
         }
         return records;
@@ -385,6 +410,34 @@ public class ParserService {
             return m.group(group);
         }
         return null;
+    }
+
+    // "Second" -> 2. Null for anything unexpected.
+    private Integer yearWordToInt(String yearWord) {
+        if (yearWord == null) {
+            return null;
+        }
+        return switch (yearWord.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "first" -> 1;
+            case "second" -> 2;
+            case "third" -> 3;
+            case "fourth" -> 4;
+            default -> null;
+        };
+    }
+
+    // Legacy coarse PASS/FAIL kept for compatibility. Single source of truth
+    // is the official raw value via YearResultStatus.
+    private String coarseOverall(ParsedRecord record) {
+        return switch (YearResultStatus.fromLedger(
+                record.getOfficialResultRaw(),
+                record.getOfficialCreditsEarned(),
+                record.getOfficialTotalCredits())) {
+            case ALL_CLEAR -> "PASS";
+            case ATKT, FAIL -> "FAIL";
+            case ABSENT -> "ABSENT";
+            case UNKNOWN -> "UNKNOWN";
+        };
     }
 
     private Integer parseIntOrNull(String value) {

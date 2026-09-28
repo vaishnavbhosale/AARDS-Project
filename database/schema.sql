@@ -83,6 +83,16 @@ CREATE TABLE IF NOT EXISTS semester_results (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS year_results (
+    id BIGSERIAL PRIMARY KEY,
+    student_id BIGINT NOT NULL REFERENCES students(id),
+    academic_session_id BIGINT NOT NULL REFERENCES academic_sessions(id),
+    study_year INT,
+    official_result_raw VARCHAR(60),
+    status VARCHAR(10) DEFAULT 'UNKNOWN',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS upload_batches (
     id BIGSERIAL PRIMARY KEY,
     uploaded_by_user_id BIGINT,

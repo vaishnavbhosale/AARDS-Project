@@ -1,6 +1,7 @@
 package com.aards.analytics;
 
 import com.aards.analytics.dto.AnalyticsFilterRequest;
+import com.aards.analytics.dto.SECombineReconciliationRow;
 import com.aards.department.Department;
 import com.aards.department.DepartmentRepository;
 import com.aards.report.dto.SECombineReportResponse;
@@ -21,14 +22,22 @@ import com.aards.subject.SubjectRepository;
 import com.aards.user.Role;
 import com.aards.user.User;
 import com.aards.user.repository.UserRepository;
+import com.aards.yearresult.YearResult;
+import com.aards.yearresult.YearResultRepository;
+import com.aards.yearresult.YearResultStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 // 10 students with spread-out SGPAs, backlogs and marks. Checks distribution
 // bands, backlog buckets, overall maths, subject rows and topper ranking.
@@ -62,6 +71,9 @@ class SECombineReportServiceTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private YearResultRepository yearResultRepository;
 
     private Student addStudent(String prn, String name, Long deptId,
                                AcademicSession session, Double sgpa3, Double sgpa4) {
@@ -98,6 +110,13 @@ class SECombineReportServiceTest {
                 .year(2).semester(3)
                 .marksObtained(marks).grade(grade)
                 .status(status).backlog(status == ResultStatus.FAIL).build());
+    }
+
+    private void addOfficial(Student student, AcademicSession session,
+                             String raw, YearResultStatus status) {
+        yearResultRepository.save(YearResult.builder()
+                .studentId(student.getId()).academicSessionId(session.getId())
+                .year(2).officialResultRaw(raw).status(status).build());
     }
 
     @Test
@@ -201,7 +220,11 @@ class SECombineReportServiceTest {
         assertEquals(0, response.getBacklog().getFailedInFour());
         assertEquals(1, response.getBacklog().getFailedInFiveOrMore());
 
-        // Overall: 10 appeared, 6 clear, 3 quality, 2 ATKT, 2 fail, 1 absent row.
+        // Overall: 10 appeared, 6 clear, 3 quality, 2 ATKT, 2 fail, 0 absent.
+        // No YearResult rows exist here so every student uses the explicit
+        // credit fallback. s7 has one ABSENT row but also a real FAIL row, so
+        // it appeared and is NOT a wholly-absent student: absent counts unique
+        // wholly-absent students, never ABSENT subject rows.
         assertEquals(10, response.getOverall().getTotalAppeared());
         assertEquals(6, response.getOverall().getAllClear());
         assertEquals(60.0, response.getOverall().getAllClearPct());
@@ -211,7 +234,7 @@ class SECombineReportServiceTest {
         assertEquals(20.0, response.getOverall().getWithAtktPct());
         assertEquals(2, response.getOverall().getFail());
         assertEquals(20.0, response.getOverall().getFailPct());
-        assertEquals(1, response.getOverall().getAbsent());
+        assertEquals(0, response.getOverall().getAbsent());
 
         // Semester blocks: II first, then I.
         List<SECombineReportResponse.SemesterBlock> blocks = response.getSemesters();
@@ -266,5 +289,121 @@ class SECombineReportServiceTest {
         assertEquals("Combine Eight", toppers.get(3).getName());
         assertEquals("Combine Two", toppers.get(4).getName());
         assertEquals(5, toppers.get(4).getRank());
+    }
+
+    // Official year result is authoritative: it overrides the credit/backlog
+    // fallback (O2 fails despite clean rows, O3 is ATKT despite zero FAIL
+    // rows), unknown/missing officials use the explicit fallback, and absent
+    // counts wholly-absent students only (O6: three ABSENT rows, one student).
+    @Test
+    void officialResultDrivesClassification() {
+        AcademicSession session = sessionRepository.save(AcademicSession.builder()
+                .name("2036-37").active(true).build());
+        Department dept = departmentRepository.save(Department.builder()
+                .name("Official Dept").code("OMB").build());
+        Subject sx1 = subjectRepository.save(Subject.builder()
+                .code("SX1").name("Official Subject One")
+                .departmentId(dept.getId()).year(2).semester(3)
+                .credits(3).maxMarks(100).passingMarks(40).build());
+        Subject sx2 = subjectRepository.save(Subject.builder()
+                .code("SX2").name("Official Subject Two")
+                .departmentId(dept.getId()).year(2).semester(3)
+                .credits(3).maxMarks(100).passingMarks(40).build());
+
+        Student o1 = addStudent("SEO200", "Official Clear", dept.getId(), session, 8.0, 8.0);
+        addResult(o1, sx1, session, 70, "A", ResultStatus.PASS);
+        addResult(o1, sx2, session, 70, "A", ResultStatus.PASS);
+        addOfficial(o1, session, null, YearResultStatus.ALL_CLEAR);
+
+        // Ledger Fail with 44/44-style clean rows: official wins, and the
+        // student stays out of the distinction bands.
+        Student o2 = addStudent("SEO201", "Official Fail Clean", dept.getId(), session, 8.5, 8.5);
+        addResult(o2, sx1, session, 70, "A", ResultStatus.PASS);
+        addResult(o2, sx2, session, 70, "A", ResultStatus.PASS);
+        addOfficial(o2, session, "Fail", YearResultStatus.FAIL);
+
+        Student o3 = addStudent("SEO202", "Official Atkt Clean", dept.getId(), session, 7.0, 7.0);
+        addResult(o3, sx1, session, 65, "A", ResultStatus.PASS);
+        addResult(o3, sx2, session, 65, "A", ResultStatus.PASS);
+        addOfficial(o3, session, "Fail A.T.K.T.", YearResultStatus.ATKT);
+
+        Student o4 = addStudent("SEO203", "Missing Official", dept.getId(), session, 7.0, 7.0);
+        addResult(o4, sx1, session, 65, "A", ResultStatus.PASS);
+        addResult(o4, sx2, session, 65, "A", ResultStatus.PASS);
+
+        Student o5 = addStudent("SEO204", "Unknown Official", dept.getId(), session, 6.0, 6.0);
+        addResult(o5, sx1, session, 65, "A", ResultStatus.PASS);
+        addResult(o5, sx2, session, 20, "F", ResultStatus.FAIL);
+        addOfficial(o5, session, "Withheld", YearResultStatus.UNKNOWN);
+
+        Student o6 = addStudent("SEO205", "Wholly Absent", dept.getId(), session, null, null);
+        addResult(o6, sx1, session, 0, null, ResultStatus.ABSENT);
+        addResult(o6, sx1, session, 0, null, ResultStatus.ABSENT);
+        addResult(o6, sx1, session, 0, null, ResultStatus.ABSENT);
+
+        // One AAA row next to real passes: appeared, never absent.
+        Student o7 = addStudent("SEO206", "Single Aaa Appeared", dept.getId(), session, 5.0, 5.0);
+        addResult(o7, sx1, session, 45, "P", ResultStatus.PASS);
+        addResult(o7, sx2, session, 45, "P", ResultStatus.PASS);
+        addResult(o7, sx2, session, 0, null, ResultStatus.ABSENT);
+
+        AnalyticsFilterRequest filter = AnalyticsFilterRequest.builder()
+                .academicSessionId(session.getId())
+                .departmentId(dept.getId())
+                .year(2)
+                .semester(3)
+                .build();
+        SECombineReportResponse response = seCombineReportService.generateSECombineReport(filter);
+
+        assertEquals(1, response.getOverall().getAbsent());
+        assertEquals(6, response.getOverall().getTotalAppeared());
+        assertEquals(3, response.getOverall().getAllClear());
+        assertEquals(50.0, response.getOverall().getAllClearPct());
+        assertEquals(2, response.getOverall().getQuality());
+        assertEquals(2, response.getOverall().getWithAtkt());
+        assertEquals(1, response.getOverall().getFail());
+        // O2 (official Fail, avg 8.5) stays out of the bands: only O1 is Distinction.
+        assertEquals(1, response.getDistribution().getDistinction().getCount());
+        assertEquals(1, response.getDistribution().getFirstClass().getCount());
+        assertEquals(1, response.getDistribution().getPassClass().getCount());
+        assertEquals(1, response.getBacklog().getFailedInOne());
+
+        List<SECombineReconciliationRow> rows =
+                seCombineReportService.reconcileSECombine(filter);
+        assertEquals(7, rows.size());
+        Map<String, SECombineReconciliationRow> byPrn = rows.stream()
+                .collect(Collectors.toMap(SECombineReconciliationRow::getPrn, r -> r));
+
+        assertRow(byPrn.get("SEO200"), null, YearResultStatus.ALL_CLEAR,
+                true, YearResultStatus.ALL_CLEAR, false);
+        assertRow(byPrn.get("SEO201"), "Fail", YearResultStatus.FAIL,
+                true, YearResultStatus.FAIL, false);
+        assertRow(byPrn.get("SEO202"), "Fail A.T.K.T.", YearResultStatus.ATKT,
+                true, YearResultStatus.ATKT, false);
+        assertRow(byPrn.get("SEO203"), null, null,
+                true, YearResultStatus.ALL_CLEAR, true);
+        assertRow(byPrn.get("SEO204"), "Withheld", YearResultStatus.UNKNOWN,
+                true, YearResultStatus.ATKT, true);
+        assertRow(byPrn.get("SEO205"), null, null,
+                false, YearResultStatus.ABSENT, true);
+        assertRow(byPrn.get("SEO206"), null, null,
+                true, YearResultStatus.ALL_CLEAR, true);
+
+        assertEquals(4, rows.stream().filter(SECombineReconciliationRow::isFallbackUsed).count());
+        List<String> unknownRaws = rows.stream()
+                .filter(r -> r.getNormalizedOfficialResult() == YearResultStatus.UNKNOWN)
+                .map(SECombineReconciliationRow::getRawOfficialResult).toList();
+        assertEquals(List.of("Withheld"), unknownRaws);
+    }
+
+    private static void assertRow(SECombineReconciliationRow row, String raw,
+                                 YearResultStatus normalized, boolean appeared,
+                                 YearResultStatus finalStatus, boolean fallbackUsed) {
+        assertTrue(row != null);
+        assertEquals(raw, row.getRawOfficialResult());
+        assertEquals(normalized, row.getNormalizedOfficialResult());
+        assertEquals(appeared, row.isAppeared());
+        assertEquals(finalStatus, row.getFinalClassification());
+        assertEquals(fallbackUsed, row.isFallbackUsed());
     }
 }

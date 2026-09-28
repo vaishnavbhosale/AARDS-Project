@@ -1,0 +1,10 @@
+PRN: 724290007  SEAT NO.: S500891007  NAME: FIXTURE UNKNOWN RESULT  Mother's Name :- FIXTURE MOTHER
+SEMESTER:  3
+PCC-201-ETC  P 024 * 033 --- --- --- --- --- --- --- --- --- --- 057  3  3  B+  7  21
+PCC-202-ETC  P 023 * 032 --- --- --- --- --- --- --- --- --- --- 055  3  3  B+  7  21
+Third Semester SGPA : 8.09  Credits Earned/Total : 22/22  Total Credit Points: 178
+SEMESTER:  4
+PCC-251-ETC  * 026 * 041 --- --- --- --- --- --- --- --- --- --- 067  2  2  A  8  16
+PCC-252-ETC  * 027 * 037 --- --- --- --- --- --- --- --- --- --- 064  2  2  A  8  16
+Fourth Semester SGPA : 8.55  Credits Earned/Total : 22/22  Total Credit Points: 188
+SECOND YEAR Result : Withheld   Total Credits Earned : 30/44

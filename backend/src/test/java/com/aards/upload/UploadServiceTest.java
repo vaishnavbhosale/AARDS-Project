@@ -17,6 +17,9 @@ import com.aards.subject.SubjectRepository;
 import com.aards.user.Role;
 import com.aards.user.User;
 import com.aards.user.repository.UserRepository;
+import com.aards.yearresult.YearResult;
+import com.aards.yearresult.YearResultRepository;
+import com.aards.yearresult.YearResultStatus;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -33,6 +36,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 // submitUpload returns at once; the pipeline finishes on a background thread.
@@ -70,6 +74,9 @@ class UploadServiceTest {
 
     @Autowired
     private SubjectRepository subjectRepository;
+
+    @Autowired
+    private YearResultRepository yearResultRepository;
 
     @Test
     void uploadOneStudent() throws Exception {
@@ -196,6 +203,15 @@ class UploadServiceTest {
             assertEquals(7.50, semesterResult.getSgpa());
             assertEquals(0, semesterResult.getBacklogCount());
             assertEquals(SemesterStatus.PASS, semesterResult.getStatus());
+
+            // Official year result persisted: Total-only 44/44 trailer, no
+            // Result value -> normalized ALL_CLEAR with null raw.
+            YearResult yearResult = yearResultRepository
+                    .findByStudentIdAndAcademicSessionIdAndYear(
+                            student.getId(), active.getId(), 1)
+                    .orElseThrow();
+            assertNull(yearResult.getOfficialResultRaw());
+            assertEquals(YearResultStatus.ALL_CLEAR, yearResult.getStatus());
         } finally {
             // Background thread commits on its own: delete what it saved.
             studentRepository.findByPrn("33334444A").ifPresent(student -> {
@@ -205,6 +221,9 @@ class UploadServiceTest {
                         .findByStudentIdAndAcademicSessionIdAndYearAndSemester(
                                 student.getId(), active.getId(), 1, 1)
                         .ifPresent(semesterResultRepository::delete);
+                yearResultRepository.findByStudentIdAndAcademicSessionIdAndYear(
+                                student.getId(), active.getId(), 1)
+                        .ifPresent(yearResultRepository::delete);
                 studentRepository.delete(student);
             });
             batchRepository.deleteById(submitted.getId());
