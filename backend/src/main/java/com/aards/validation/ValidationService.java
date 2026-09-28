@@ -22,8 +22,8 @@ public class ValidationService {
 
     private static final Logger log = LoggerFactory.getLogger(ValidationService.class);
 
-    // Accepts old numeric PRNs and ledger PRNs like 72332766B (digits + letter).
-    private static final String PRN_RULE = "(\\d{8,12}|\\d{8,9}[A-Z])";
+    // PRNs are 8-9 digits with an optional trailing letter (FE: 72332766B, SE: 724289563).
+    private static final String PRN_RULE = "\\d{8,9}[A-Z]?";
 
     private final ValidationErrorRepository errorRepository;
     private final UploadService uploadService;
@@ -45,7 +45,7 @@ public class ValidationService {
             if (prn.isEmpty()) {
                 errors.add(buildError(batch, prn, name, "PRN", "", "PRN is missing"));
             } else if (!prn.matches(PRN_RULE)) {
-                errors.add(buildError(batch, prn, name, "PRN", prn, "PRN must be 8-12 digits"));
+                errors.add(buildError(batch, prn, name, "PRN", prn, "PRN must be 8-9 digits with optional letter"));
             }
             if (name.isEmpty()) {
                 errors.add(buildError(batch, prn, name, "name", name, "Name is missing"));

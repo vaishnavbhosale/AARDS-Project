@@ -19,18 +19,19 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 // Reads ledger text with PDFBox and extracts student blocks with regex.
-// Parsing logic based on real SPPU College Ledger format (2019 Pattern). Update if format changes.
+// Handles FE (2019 Pattern, 6-digit codes) and SE NEP 2020 (PCC-201-ETC style codes).
 @Service
 public class ParserService {
 
     private static final Logger log = LoggerFactory.getLogger(ParserService.class);
 
-    private static final String PRN_LINE_PATTERN = "PRN:\\s*(\\d{8,9}[A-Z])\\s*Seat\\s*No\\.?:\\s*([A-Z0-9]+)\\s*NAME:\\s*(.+?)\\s*Mother\\s*-\\s*(.+)";
+    private static final String PRN_LINE_PATTERN = "PRN:\\s*(\\d{8,9}[A-Z]?)\\s*Seat\\s*No\\.?:\\s*([A-Z0-9]+)\\s*NAME:\\s*(.+?)\\s*Mother(?:'s\\s+Name)?\\s*:?-?\\s*(.+)";
     private static final String SEMESTER_PATTERN = "SEMESTER:\\s*(\\d)";
     private static final String SUBJECT_ROW_PATTERN = "^(\\d{6})(?:[\\-_](\\d|PR|TW))?\\s+(.+)$";
-    private static final String SGPA_PATTERN = "(First|Second)\\s+Semester\\s+SGPA\\s*:\\s*([0-9.]+|\\-\\-\\-)";
+    private static final String SE_SUBJECT_HEAD_PATTERN = "^([A-Z]{3}-?\\d{3}[A-Z]?(?:-?[A-Z]{2,3})?)\\s+(.+)$";
+    private static final String SGPA_PATTERN = "(First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth)\\s+Semester\\s+SGPA\\s*:\\s*([0-9.]+|\\-\\-\\-)";
     private static final String CREDITS_PATTERN = "Credits\\s+Earned/Total\\s*:\\s*(\\d+)/(\\d+)";
-    private static final String RESULT_PATTERN = "First Year (?:Result\\s*:\\s*(Pass|Fail)|Total\\s+Credits\\s+Earned)";
+    private static final String RESULT_PATTERN = "(?i)(First|Second|Third|Fourth)\\s+Year\\s+(?:Result\\s*:\\s*(Pass|Fail(?:\\s+A\\.T\\.K\\.T\\.)?)|Total\\s+Credits\\s+Earned)";
     private static final String GRADE_PATTERN = "\\b(O|A\\+|A|B\\+|B|C|P|F|FFF)\\b";
     private static final String TOTAL_POINTS_PATTERN = "Total Credit Points\\s*:\\s*(\\d+)";
     // First-page subject list: code, optional suffix, repeated code, title.
@@ -39,9 +40,11 @@ public class ParserService {
             "^(\\d{6})(.*?)\\b\\1\\b\\s*(?:[-_]\\s*(?:\\d|PR|TW)\\s*|_\\s*(?:PR|TW)\\s*)*(.+)$";
     private static final String LIST_SEMESTER_PATTERN = "(?i)semester\\s*:\\s*(\\d+)";
 
-    private static final Pattern PRN_LINE_REGEX = Pattern.compile(PRN_LINE_PATTERN);
+    // PRN line is case-insensitive: FE uses "Seat No.", SE uses "SEAT NO.".
+    private static final Pattern PRN_LINE_REGEX = Pattern.compile(PRN_LINE_PATTERN, Pattern.CASE_INSENSITIVE);
     private static final Pattern SEMESTER_REGEX = Pattern.compile(SEMESTER_PATTERN);
     private static final Pattern SUBJECT_ROW_REGEX = Pattern.compile(SUBJECT_ROW_PATTERN);
+    private static final Pattern SE_SUBJECT_HEAD_REGEX = Pattern.compile(SE_SUBJECT_HEAD_PATTERN);
     private static final Pattern SGPA_REGEX = Pattern.compile(SGPA_PATTERN);
     private static final Pattern CREDITS_REGEX = Pattern.compile(CREDITS_PATTERN);
     private static final Pattern RESULT_REGEX = Pattern.compile(RESULT_PATTERN);
@@ -163,7 +166,8 @@ public class ParserService {
             }
             Matcher resultMatcher = RESULT_REGEX.matcher(line);
             if (resultMatcher.find()) {
-                String outcome = resultMatcher.group(1);
+                // Group 1 is the year word, group 2 is the outcome (null for credit lines).
+                String outcome = resultMatcher.group(2);
                 current.setOverallResult(
                         outcome == null || outcome.equalsIgnoreCase("Pass") ? "PASS" : "FAIL");
             }
@@ -231,7 +235,8 @@ public class ParserService {
         return s;
     }
 
-    // A subject row starts with a 6-digit code, e.g. "101011- 1 P 014 ..." or "101011- 1_ PR --- ...".
+    // A subject row starts with a code: FE 6-digit ("101011- 1 ...")
+    // or SE NEP ("PCC-201-ETC ...", "OEL-221A ...").
     private SubjectMark tryParseSubjectRow(String line) {
         // Join a spaced dash ("101011- 1 ..." -> "101011-1 ...") so the pattern matches.
         String normalized = line.replaceFirst("^(\\d{6})\\s*-\\s*", "$1-");
@@ -252,11 +257,18 @@ public class ParserService {
                 rest = rest.substring(extra.end()).trim();
             }
         } else {
-            // Odd separators: parse the head manually, e.g. "101011-1_ PR --- ...".
-            Matcher g = Pattern.compile("^(\\d{6})\\b\\s*(.*)$").matcher(normalized);
-            if (!g.find()) {
-                return null;
-            }
+            // SE (NEP 2020) codes like PCC-201-ETC or OEL-221A: no suffix part.
+            Matcher se = SE_SUBJECT_HEAD_REGEX.matcher(line);
+            if (se.find()) {
+                code = se.group(1);
+                suffix = "";
+                rest = se.group(2).trim();
+            } else {
+                // Odd separators: parse the head manually, e.g. "101011-1_ PR --- ...".
+                Matcher g = Pattern.compile("^(\\d{6})\\b\\s*(.*)$").matcher(normalized);
+                if (!g.find()) {
+                    return null;
+                }
             code = g.group(1);
             String tail = g.group(2).trim();
             if (tail.startsWith("-")) {
@@ -279,6 +291,7 @@ public class ParserService {
                 return null;
             }
             rest = String.join(" ", Arrays.copyOfRange(head, used, head.length)).trim();
+            }
         }
 
         // Tail columns: Total, Credits, CreditsEarned, Grade, GradePoints, CreditPoints.

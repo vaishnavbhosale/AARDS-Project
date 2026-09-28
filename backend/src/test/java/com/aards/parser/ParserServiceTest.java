@@ -15,6 +15,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 // Uses ledger-style text (2019 Pattern): 1 student, 2 subjects, SGPA + result lines.
 @SpringBootTest
@@ -112,6 +113,40 @@ class ParserServiceTest {
         assertEquals("Engineering Mechanics", names.get("101011-1_PR"));
         assertEquals("Systems in Mechanical Engineering", names.get("102003_TW"));
         assertFalse(names.containsKey("Code Paper Title"));
+    }
+
+    @Test
+    void parseSeNepLedgerText() {
+        String text =
+                "PRN: 724289563  SEAT NO.: S500890065  NAME: BHAGAT ANUSHKA PRAMOD  Mother's Name :- REKHA\n"
+                + "SEMESTER: 3\n"
+                + "PCC-201-ETC  P 024 * 033 --- --- --- --- --- --- --- --- --- --- 057  3  3  B+  7  21\n"
+                + "PCC-202-ETC  P 023 * 032 --- --- --- --- --- --- --- --- --- --- 055  3  3  B+  7  21\n"
+                + "Third Semester SGPA : 8.09  Credits Earned/Total : 22/22  Total Credit Points: 178\n"
+                + "SEMESTER: 4\n"
+                + "PCC-251-ETC  * 026 * 041 --- --- --- --- --- --- --- --- --- --- 067  2  2  A  8  16\n"
+                + "PCC-252-ETC  * 017 * 013 --- --- --- --- --- --- --- --- --- --- 030 FFF  3  0  F  0  0\n"
+                + "Fourth Semester SGPA : 8.55  Credits Earned/Total : 22/22  Total Credit Points: 188\n"
+                + "SECOND YEAR Result : Fail A.T.K.T.  Total Credits Earned : 38/44";
+        List<ParsedRecord> records = parserService.parseText(text);
+
+        assertEquals(1, records.size());
+        ParsedRecord record = records.get(0);
+        assertEquals("724289563", record.getPrn());
+        assertTrue(record.getName().contains("BHAGAT ANUSHKA PRAMOD"));
+        assertEquals(4, record.getMarks().size());
+        assertTrue(record.getMarks().get(0).getSubjectCode().contains("PCC-201-ETC"));
+        assertTrue(record.getMarks().get(1).getSubjectCode().contains("PCC-202-ETC"));
+        assertTrue(record.getMarks().get(2).getSubjectCode().contains("PCC-251-ETC"));
+        assertTrue(record.getMarks().get(3).getSubjectCode().contains("PCC-252-ETC"));
+        assertEquals(3, record.getMarks().get(0).getSemester());
+        assertEquals(3, record.getMarks().get(1).getSemester());
+        assertEquals(4, record.getMarks().get(2).getSemester());
+        assertEquals(4, record.getMarks().get(3).getSemester());
+        assertEquals(2, record.getSemesters().size());
+        assertEquals("B+", record.getMarks().get(0).getGrade());
+        assertEquals("F", record.getMarks().get(3).getGrade());
+        assertEquals("FAIL", record.getOverallResult());
     }
 
     @Test
