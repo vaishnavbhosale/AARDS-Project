@@ -222,7 +222,23 @@ export default function SECombineReport() {
               loading={downloading}
               disabled={downloading}
             >
-              {downloading ? 'Generating...' : 'Download PDF Report'}
+              <span className="inline-flex items-center gap-2">
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4"
+                  />
+                </svg>
+                {downloading ? 'Generating...' : 'Download PDF Report'}
+              </span>
             </Button>
           </div>
         </Card>
@@ -252,15 +268,13 @@ export default function SECombineReport() {
         report && (
           <>
             <Card>
-              <p className="text-lg font-semibold text-slate-900">
+              <p className="text-xl font-bold text-slate-900">
                 {report.header?.collegeName}
               </p>
               <p className="text-sm text-slate-600">
                 {report.header?.departmentName} | Session {report.header?.sessionName} |{' '}
-                {report.header?.yearLabel} | Generated on {report.header?.generatedOn}
-              </p>
-              <p className="text-sm text-slate-600">
-                Total Appeared: {report.header?.totalAppearedHeader}
+                {report.header?.yearLabel} ({report.header?.semesterLabel}) | Generated
+                on {report.header?.generatedOn}
               </p>
             </Card>
 
@@ -304,6 +318,7 @@ export default function SECombineReport() {
                   <p className="text-sm text-slate-500">No subject data available.</p>
                 ) : (
                   <Table
+                    stickyCols={2}
                     headers={[
                       'SN',
                       'Subject Name',
@@ -362,6 +377,21 @@ export default function SECombineReport() {
                   ))}
                 </Table>
               )}
+            </Card>
+
+            <Card>
+              <div className="grid grid-cols-3 gap-6 pt-4 text-center">
+                {[
+                  'Dept. Exam Coordinator',
+                  'Head of the Department',
+                  'Principal',
+                ].map((role) => (
+                  <div key={role}>
+                    <div className="border-t-2 border-dotted border-slate-400" />
+                    <p className="text-xs text-slate-600 mt-2">{role}</p>
+                  </div>
+                ))}
+              </div>
             </Card>
           </>
         )
