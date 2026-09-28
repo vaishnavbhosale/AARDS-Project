@@ -171,6 +171,7 @@ class SECombineReportServiceTest {
                 .credits(2).maxMarks(100).passingMarks(40).build());
         addResult(s1, se204, session, 23, "A+", ResultStatus.PASS);
         addResult(s2, se204, session, 38, "A", ResultStatus.PASS);
+        addResult(s6, se204, session, 65, "A", ResultStatus.PASS);
 
         AnalyticsFilterRequest filter = AnalyticsFilterRequest.builder()
                 .academicSessionId(session.getId())
@@ -180,9 +181,9 @@ class SECombineReportServiceTest {
                 .build();
         SECombineReportResponse response = seCombineReportService.generateSECombineReport(filter);
 
-        // Distribution over the 8 students with an average.
-        assertEquals(4, response.getDistribution().getDistinction().getCount());
-        assertEquals(40.0, response.getDistribution().getDistinction().getPercentage());
+        // Distribution covers all-clear students only: bands add up to All Clear.
+        assertEquals(2, response.getDistribution().getDistinction().getCount());
+        assertEquals(20.0, response.getDistribution().getDistinction().getPercentage());
         assertEquals(1, response.getDistribution().getFirstClass().getCount());
         assertEquals(1, response.getDistribution().getHigherSecond().getCount());
         assertEquals(1, response.getDistribution().getSecondClass().getCount());
@@ -195,16 +196,16 @@ class SECombineReportServiceTest {
         assertEquals(0, response.getBacklog().getFailedInFour());
         assertEquals(1, response.getBacklog().getFailedInFiveOrMore());
 
-        // Overall: 10 appeared, 6 clear, 5 quality, 3 ATKT, 1 fail, 1 absent row.
+        // Overall: 10 appeared, 6 clear, 3 quality, 2 ATKT, 2 fail, 1 absent row.
         assertEquals(10, response.getOverall().getTotalAppeared());
         assertEquals(6, response.getOverall().getAllClear());
         assertEquals(60.0, response.getOverall().getAllClearPct());
-        assertEquals(5, response.getOverall().getQuality());
-        assertEquals(83.33, response.getOverall().getQualityPct());
-        assertEquals(3, response.getOverall().getWithAtkt());
-        assertEquals(30.0, response.getOverall().getWithAtktPct());
-        assertEquals(1, response.getOverall().getFail());
-        assertEquals(16.67, response.getOverall().getFailPct());
+        assertEquals(3, response.getOverall().getQuality());
+        assertEquals(30.0, response.getOverall().getQualityPct());
+        assertEquals(2, response.getOverall().getWithAtkt());
+        assertEquals(20.0, response.getOverall().getWithAtktPct());
+        assertEquals(2, response.getOverall().getFail());
+        assertEquals(20.0, response.getOverall().getFailPct());
         assertEquals(1, response.getOverall().getAbsent());
 
         // Semester blocks: II first, then I.
@@ -241,9 +242,9 @@ class SECombineReportServiceTest {
         assertEquals(2, rows.get(2).getDistinction());
         assertEquals(3, rows.get(2).getFirstClass());
         assertEquals("SE204", rows.get(3).getSubjectCode());
-        assertEquals(2, rows.get(3).getOnRoll());
-        assertEquals(2, rows.get(3).getAppeared());
-        assertEquals(2, rows.get(3).getPassed());
+        assertEquals(3, rows.get(3).getOnRoll());
+        assertEquals(3, rows.get(3).getAppeared());
+        assertEquals(3, rows.get(3).getPassed());
         assertEquals(100.0, rows.get(3).getPassingPercentage());
 
         // Toppers: top 5 by avg SGPA.

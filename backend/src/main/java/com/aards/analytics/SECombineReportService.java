@@ -121,23 +121,27 @@ public class SECombineReportService {
             }
             List<Result> rows = resultsByStudent.getOrDefault(studentId, List.of());
             long backlogCount = rows.stream().filter(r -> r.getStatus() == ResultStatus.FAIL).count();
-            boolean allFail = !rows.isEmpty() && rows.stream().allMatch(r -> r.getStatus() == ResultStatus.FAIL);
+            long passedSubjectCount = rows.stream().filter(r -> r.getStatus() == ResultStatus.PASS).count();
             double totalMarks = rows.stream()
                     .mapToDouble(r -> r.getMarksObtained() == null ? 0 : r.getMarksObtained()).sum();
-            summaries.add(new StudentSummary(student, avgSgpa, backlogCount, allFail, totalMarks));
+            summaries.add(new StudentSummary(student, avgSgpa, backlogCount, passedSubjectCount, totalMarks));
         }
 
         long total = summaries.size();
         List<StudentSummary> withAvg = summaries.stream()
                 .filter(s -> s.avgSgpa != null).toList();
+        // Distribution covers all-clear students only (ATKT students live in
+        // the backlog table). Bands must add up to All Clear.
+        List<StudentSummary> clearWithAvg = withAvg.stream()
+                .filter(s -> s.backlogCount == 0).toList();
 
         // d. Distribution bands on avg SGPA. Null averages (no SGPA anywhere)
         // go to the unclassified bucket instead of vanishing from totals.
-        long distinction = countInBand(withAvg, 7.75, Double.MAX_VALUE);
-        long firstClass = countInBand(withAvg, 6.75, 7.75);
-        long higherSecond = countInBand(withAvg, 6.25, 6.75);
-        long secondClass = countInBand(withAvg, 5.5, 6.25);
-        long passClass = withAvg.stream().filter(s -> s.avgSgpa < 5.5).count();
+        long distinction = countInBand(clearWithAvg, 7.75, Double.MAX_VALUE);
+        long firstClass = countInBand(clearWithAvg, 6.75, 7.75);
+        long higherSecond = countInBand(clearWithAvg, 6.25, 6.75);
+        long secondClass = countInBand(clearWithAvg, 5.5, 6.25);
+        long passClass = clearWithAvg.stream().filter(s -> s.avgSgpa < 5.5).count();
         long unclassified = summaries.stream().filter(s -> s.avgSgpa == null).count();
 
         // e. Backlog buckets.
@@ -147,11 +151,14 @@ public class SECombineReportService {
         long failedInFour = countBacklogs(summaries, 4);
         long failedInFiveOrMore = summaries.stream().filter(s -> s.backlogCount >= 5).count();
 
-        // f. Overall summary.
+        // f. Overall summary. Quality is a subset of All Clear; fail means
+        // zero passed subjects; ATKT sits in between.
         long allClear = summaries.stream().filter(s -> s.backlogCount == 0).count();
-        long quality = withAvg.stream().filter(s -> s.avgSgpa >= 6.75).count();
-        long withAtkt = summaries.stream().filter(s -> s.backlogCount >= 1 && !s.allFail).count();
-        long fail = summaries.stream().filter(s -> s.allFail).count();
+        long quality = summaries.stream()
+                .filter(s -> s.backlogCount == 0 && s.avgSgpa != null && s.avgSgpa >= 6.75).count();
+        long withAtkt = summaries.stream()
+                .filter(s -> s.backlogCount >= 1 && s.passedSubjectCount >= 1).count();
+        long fail = summaries.stream().filter(s -> s.passedSubjectCount == 0).count();
         long absent = allResults.stream().filter(r -> r.getStatus() == ResultStatus.ABSENT).count();
 
         // g. Subject tables, Semester II first to match the Excel sheet.
@@ -210,11 +217,11 @@ public class SECombineReportService {
                         .allClear(allClear)
                         .allClearPct(pct(allClear, total))
                         .quality(quality)
-                        .qualityPct(pct(quality, allClear))
+                        .qualityPct(pct(quality, total))
                         .withAtkt(withAtkt)
                         .withAtktPct(pct(withAtkt, total))
                         .fail(fail)
-                        .failPct(pct(fail, allClear))
+                        .failPct(pct(fail, total))
                         .absent(absent)
                         .build())
                 .semesters(semesters)
@@ -350,15 +357,15 @@ public class SECombineReportService {
         final Student student;
         final Double avgSgpa;
         final long backlogCount;
-        final boolean allFail;
+        final long passedSubjectCount;
         final double totalMarks;
 
         StudentSummary(Student student, Double avgSgpa, long backlogCount,
-                       boolean allFail, double totalMarks) {
+                       long passedSubjectCount, double totalMarks) {
             this.student = student;
             this.avgSgpa = avgSgpa;
             this.backlogCount = backlogCount;
-            this.allFail = allFail;
+            this.passedSubjectCount = passedSubjectCount;
             this.totalMarks = totalMarks;
         }
     }
