@@ -155,6 +155,11 @@ class SECombineReportServiceTest {
         addResult(s8, se203, session, 60, "B+", ResultStatus.PASS);
         addResult(s8, se203, session, 61, "B+", ResultStatus.PASS);
         addResult(s8, se203, session, 62, "B+", ResultStatus.PASS);
+        // Extra passes so s3-s6 earn 6+ credits (year max is 12, fail below 6).
+        addResult(s3, se203, session, 60, "B+", ResultStatus.PASS);
+        addResult(s4, se203, session, 61, "B+", ResultStatus.PASS);
+        addResult(s5, se203, session, 62, "B+", ResultStatus.PASS);
+        addResult(s6, se203, session, 63, "B+", ResultStatus.PASS);
         for (int i = 0; i < 5; i++) {
             addResult(s9, se202, session, 20, "F", ResultStatus.FAIL);
         }
@@ -168,7 +173,7 @@ class SECombineReportServiceTest {
         Subject se204 = subjectRepository.save(Subject.builder()
                 .code("SE204").name("Combine TUT Subject")
                 .departmentId(dept.getId()).year(2).semester(3)
-                .credits(2).maxMarks(100).passingMarks(40).build());
+                .credits(3).maxMarks(100).passingMarks(40).build());
         addResult(s1, se204, session, 23, "A+", ResultStatus.PASS);
         addResult(s2, se204, session, 38, "A", ResultStatus.PASS);
         addResult(s6, se204, session, 65, "A", ResultStatus.PASS);
@@ -235,12 +240,12 @@ class SECombineReportServiceTest {
         assertEquals(1, rows.get(1).getPassed());
         assertEquals(20.0, rows.get(1).getPassingPercentage());
         assertEquals("SE203", rows.get(2).getSubjectCode());
-        assertEquals(2, rows.get(2).getOnRoll());
-        assertEquals(2, rows.get(2).getAppeared());
-        assertEquals(2, rows.get(2).getPassed());
+        assertEquals(6, rows.get(2).getOnRoll());
+        assertEquals(6, rows.get(2).getAppeared());
+        assertEquals(6, rows.get(2).getPassed());
         assertEquals(100.0, rows.get(2).getPassingPercentage());
         assertEquals(2, rows.get(2).getDistinction());
-        assertEquals(3, rows.get(2).getFirstClass());
+        assertEquals(7, rows.get(2).getFirstClass());
         assertEquals("SE204", rows.get(3).getSubjectCode());
         assertEquals(3, rows.get(3).getOnRoll());
         assertEquals(3, rows.get(3).getAppeared());

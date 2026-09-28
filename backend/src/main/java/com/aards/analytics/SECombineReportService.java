@@ -89,6 +89,25 @@ public class SECombineReportService {
         Map<Long, List<Result>> resultsByStudent = allResults.stream()
                 .collect(Collectors.groupingBy(r -> r.getStudent().getId()));
 
+        // b2. Year credit frame: distinct subjects per semester and their credits.
+        // SPPU fail rule = earned credits below half of this total (SE: 44 -> 22).
+        Map<Long, Subject> subjectById = subjectRepository.findAllById(allResults.stream()
+                        .map(r -> r.getSubject().getId()).collect(Collectors.toSet())).stream()
+                .collect(Collectors.toMap(Subject::getId, s -> s));
+        Map<Integer, Set<Long>> subjectIdsBySemester = new HashMap<>();
+        for (Result r : allResults) {
+            if (r.getSemester() != null) {
+                subjectIdsBySemester
+                        .computeIfAbsent(r.getSemester(), k -> new HashSet<>())
+                        .add(r.getSubject().getId());
+            }
+        }
+        int maxCredits = subjectIdsBySemester.values().stream()
+                .flatMap(Set::stream)
+                .mapToInt(id -> creditsOf(subjectById.get(id)))
+                .sum();
+        double failThreshold = maxCredits * 0.5;
+
         // c. One summary per student.
         Set<Long> studentIds = new HashSet<>();
         studentIds.addAll(sgpaA.keySet());
@@ -122,9 +141,15 @@ public class SECombineReportService {
             List<Result> rows = resultsByStudent.getOrDefault(studentId, List.of());
             long backlogCount = rows.stream().filter(r -> r.getStatus() == ResultStatus.FAIL).count();
             long passedSubjectCount = rows.stream().filter(r -> r.getStatus() == ResultStatus.PASS).count();
+            // Credits earned = credits of passed subjects only.
+            long creditsEarned = rows.stream()
+                    .filter(r -> r.getStatus() == ResultStatus.PASS)
+                    .mapToLong(r -> creditsOf(subjectById.get(r.getSubject().getId())))
+                    .sum();
             double totalMarks = rows.stream()
                     .mapToDouble(r -> r.getMarksObtained() == null ? 0 : r.getMarksObtained()).sum();
-            summaries.add(new StudentSummary(student, avgSgpa, backlogCount, passedSubjectCount, totalMarks));
+            summaries.add(new StudentSummary(student, avgSgpa, backlogCount,
+                    passedSubjectCount, creditsEarned, totalMarks));
         }
 
         long total = summaries.size();
@@ -151,14 +176,15 @@ public class SECombineReportService {
         long failedInFour = countBacklogs(summaries, 4);
         long failedInFiveOrMore = summaries.stream().filter(s -> s.backlogCount >= 5).count();
 
-        // f. Overall summary. Quality is a subset of All Clear; fail means
-        // zero passed subjects; ATKT sits in between.
+        // f. Overall summary. Quality is a subset of All Clear. Fail follows
+        // the SPPU credits rule: earned below half of the year's max credits.
+        // ATKT = backlogs but still above that line.
         long allClear = summaries.stream().filter(s -> s.backlogCount == 0).count();
         long quality = summaries.stream()
                 .filter(s -> s.backlogCount == 0 && s.avgSgpa != null && s.avgSgpa >= 6.75).count();
         long withAtkt = summaries.stream()
-                .filter(s -> s.backlogCount >= 1 && s.passedSubjectCount >= 1).count();
-        long fail = summaries.stream().filter(s -> s.passedSubjectCount == 0).count();
+                .filter(s -> s.backlogCount >= 1 && s.creditsEarned >= failThreshold).count();
+        long fail = summaries.stream().filter(s -> s.creditsEarned < failThreshold).count();
         long absent = allResults.stream().filter(r -> r.getStatus() == ResultStatus.ABSENT).count();
 
         // g. Subject tables, Semester II first to match the Excel sheet.
@@ -358,15 +384,22 @@ public class SECombineReportService {
         final Double avgSgpa;
         final long backlogCount;
         final long passedSubjectCount;
+        final long creditsEarned;
         final double totalMarks;
 
         StudentSummary(Student student, Double avgSgpa, long backlogCount,
-                       long passedSubjectCount, double totalMarks) {
+                       long passedSubjectCount, long creditsEarned, double totalMarks) {
             this.student = student;
             this.avgSgpa = avgSgpa;
             this.backlogCount = backlogCount;
             this.passedSubjectCount = passedSubjectCount;
+            this.creditsEarned = creditsEarned;
             this.totalMarks = totalMarks;
         }
+    }
+
+    // Subject credits, 0 when unknown. Never null.
+    private static int creditsOf(Subject subject) {
+        return subject == null || subject.getCredits() == null ? 0 : subject.getCredits();
     }
 }
