@@ -163,6 +163,14 @@ class SECombineReportServiceTest {
         for (int i = 0; i < 3; i++) {
             addResult(s10, se202, session, 22, "F", ResultStatus.FAIL);
         }
+        // TUT-only subject: passing grades below the 40% line. These rows are
+        // saved PASS, so backlog and all-clear counts must not move.
+        Subject se204 = subjectRepository.save(Subject.builder()
+                .code("SE204").name("Combine TUT Subject")
+                .departmentId(dept.getId()).year(2).semester(3)
+                .credits(2).maxMarks(100).passingMarks(40).build());
+        addResult(s1, se204, session, 23, "A+", ResultStatus.PASS);
+        addResult(s2, se204, session, 38, "A", ResultStatus.PASS);
 
         AnalyticsFilterRequest filter = AnalyticsFilterRequest.builder()
                 .academicSessionId(session.getId())
@@ -206,7 +214,7 @@ class SECombineReportServiceTest {
         assertEquals(0, blocks.get(0).getSubjects().size());
         assertEquals("Semester I", blocks.get(1).getSemesterDisplayName());
         List<SECombineReportResponse.SubjectRow> rows = blocks.get(1).getSubjects();
-        assertEquals(3, rows.size());
+        assertEquals(4, rows.size());
         assertEquals("SE201", rows.get(0).getSubjectCode());
         assertEquals("Combine Faculty", rows.get(0).getFacultyName());
         assertEquals(5, rows.get(0).getOnRoll());
@@ -232,6 +240,11 @@ class SECombineReportServiceTest {
         assertEquals(100.0, rows.get(2).getPassingPercentage());
         assertEquals(2, rows.get(2).getDistinction());
         assertEquals(3, rows.get(2).getFirstClass());
+        assertEquals("SE204", rows.get(3).getSubjectCode());
+        assertEquals(2, rows.get(3).getOnRoll());
+        assertEquals(2, rows.get(3).getAppeared());
+        assertEquals(2, rows.get(3).getPassed());
+        assertEquals(100.0, rows.get(3).getPassingPercentage());
 
         // Toppers: top 5 by avg SGPA.
         List<SECombineReportResponse.TopperRow> toppers = response.getToppers();

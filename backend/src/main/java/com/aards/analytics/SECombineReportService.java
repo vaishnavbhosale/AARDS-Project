@@ -110,8 +110,15 @@ public class SECombineReportService {
             if (sgpaB.get(studentId) != null) {
                 sgpas.add(sgpaB.get(studentId));
             }
-            Double avgSgpa = sgpas.isEmpty() ? null
-                    : sgpas.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            // Both semesters null (ATKT ledger shows "----"): fall back to the
+            // latest prior-year SGPA so the student stays in distribution.
+            // Null survives only when no prior SGPA exists (unclassified).
+            Double avgSgpa;
+            if (sgpas.isEmpty()) {
+                avgSgpa = fallbackSgpa(studentId, filter.getAcademicSessionId(), filter.getYear());
+            } else {
+                avgSgpa = sgpas.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            }
             List<Result> rows = resultsByStudent.getOrDefault(studentId, List.of());
             long backlogCount = rows.stream().filter(r -> r.getStatus() == ResultStatus.FAIL).count();
             boolean allFail = !rows.isEmpty() && rows.stream().allMatch(r -> r.getStatus() == ResultStatus.FAIL);
@@ -124,12 +131,14 @@ public class SECombineReportService {
         List<StudentSummary> withAvg = summaries.stream()
                 .filter(s -> s.avgSgpa != null).toList();
 
-        // d. Distribution bands on avg SGPA.
+        // d. Distribution bands on avg SGPA. Null averages (no SGPA anywhere)
+        // go to the unclassified bucket instead of vanishing from totals.
         long distinction = countInBand(withAvg, 7.75, Double.MAX_VALUE);
         long firstClass = countInBand(withAvg, 6.75, 7.75);
         long higherSecond = countInBand(withAvg, 6.25, 6.75);
         long secondClass = countInBand(withAvg, 5.5, 6.25);
         long passClass = withAvg.stream().filter(s -> s.avgSgpa < 5.5).count();
+        long unclassified = summaries.stream().filter(s -> s.avgSgpa == null).count();
 
         // e. Backlog buckets.
         long failedInOne = countBacklogs(summaries, 1);
@@ -187,6 +196,7 @@ public class SECombineReportService {
                         .higherSecond(countPct(higherSecond, total))
                         .secondClass(countPct(secondClass, total))
                         .passClass(countPct(passClass, total))
+                        .unclassified(countPct(unclassified, total))
                         .build())
                 .backlog(SECombineReportResponse.Backlog.builder()
                         .failedInOne(failedInOne)
@@ -294,6 +304,19 @@ public class SECombineReportService {
 
     private long countBacklogs(List<StudentSummary> summaries, int backlogs) {
         return summaries.stream().filter(s -> s.backlogCount == backlogs).count();
+    }
+
+    // Latest non-null SGPA from an earlier year, for ATKT students whose both
+    // current semesters show "----". Null when no prior SGPA exists.
+    private Double fallbackSgpa(Long studentId, Long sessionId, int year) {
+        return semesterResultRepository.findByStudentIdAndAcademicSessionId(studentId, sessionId)
+                .stream()
+                .filter(r -> r.getYear() != null && r.getYear() < year)
+                .filter(r -> r.getSgpa() != null)
+                .max(Comparator.comparingInt(
+                        r -> r.getYear() * 100 + (r.getSemester() == null ? 0 : r.getSemester())))
+                .map(SemesterResult::getSgpa)
+                .orElse(null);
     }
 
     private SECombineReportResponse.CountPct countPct(long count, long total) {

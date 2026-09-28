@@ -13,4 +13,6 @@ public interface SemesterResultRepository extends JpaRepository<SemesterResult, 
     List<SemesterResult> findByAcademicSessionIdAndYearAndSemester(Long sessionId, Integer year, Integer semester);
 
     List<SemesterResult> findByAcademicSessionIdAndYear(Long sessionId, Integer year);
+
+    List<SemesterResult> findByStudentIdAndAcademicSessionId(Long studentId, Long sessionId);
 }

@@ -59,6 +59,8 @@ public class SECombineReportResponse {
         private CountPct higherSecond;
         private CountPct secondClass;
         private CountPct passClass;
+        // Rare edge case: no SGPA this year and none in prior years either.
+        private CountPct unclassified;
     }
 
     @Data

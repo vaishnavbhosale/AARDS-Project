@@ -4,6 +4,7 @@ import com.aards.department.Department;
 import com.aards.department.DepartmentRepository;
 import com.aards.result.Result;
 import com.aards.result.ResultRepository;
+import com.aards.result.ResultStatus;
 import com.aards.semesterresult.SemesterResult;
 import com.aards.semesterresult.SemesterResultRepository;
 import com.aards.semesterresult.SemesterStatus;
@@ -107,6 +108,7 @@ class UploadServiceTest {
                         "PRN: 33334444A Seat No.: F190890001 NAME: Test Student Mother- Test Mother",
                         "SEMESTER: 1",
                         "101011- 1 P 014 P 028 --- --- --- --- 042 3 3 P 4 12",
+                        "EEM-231-ETC  --- --- --- --- --- P 023 --- --- --- --- --- --- 023  2  2  A+  9  18",
                         "First Semester SGPA : 7.50 Credits Earned/Total : 22/22 Total Credit Points: 165",
                         "First Year Total Credits Earned : 44/44"
                 };
@@ -157,9 +159,19 @@ class UploadServiceTest {
             // Every result row uses the active session + record year/sem.
             List<Result> results = resultRepository
                     .findByStudentIdAndAcademicSessionId(student.getId(), active.getId());
-            assertEquals(1, results.size());
+            assertEquals(2, results.size());
             assertEquals(1, results.get(0).getYear());
             assertEquals(1, results.get(0).getSemester());
+
+            // TUT-only row: passing grade below the 40% line still saves PASS.
+            Subject tutSubject = subjectRepository
+                    .findByCodeAndDepartmentId("EEM-231-ETC", comp.getId())
+                    .orElseThrow();
+            Result tutResult = resultRepository
+                    .findBySubjectIdAndAcademicSessionId(tutSubject.getId(), active.getId())
+                    .stream().findFirst().orElseThrow();
+            assertEquals("A+", tutResult.getGrade());
+            assertEquals(ResultStatus.PASS, tutResult.getStatus());
 
             // Saved subject uses the list-page title, not the code.
             Subject subject = subjectRepository

@@ -393,7 +393,10 @@ public class UploadService {
                     Subject subject = subjectsByKey.get(mark.getSubjectCode());
                     double obtained = mark.getMarksObtained() == null ? 0 : mark.getMarksObtained();
                     double max = mark.getMaxMarks() == null ? 100 : mark.getMaxMarks();
-                    boolean pass = obtained >= 0.4 * max;
+                    // Grade decides first: TUT-only rows (A+, A, ...) pass even
+                    // when marks sit below the 40% line. Marks are only a
+                    // fallback when no grade was parsed.
+                    boolean pass = isPassingMark(mark, obtained, max);
                     if (isFailGrade(mark.getGrade())) {
                         backlogs++;
                     }
@@ -483,6 +486,16 @@ public class UploadService {
     // F and FFF mean the student failed that subject.
     private boolean isFailGrade(String grade) {
         return "F".equalsIgnoreCase(grade) || "FFF".equalsIgnoreCase(grade);
+    }
+
+    // Grade-first pass check. O/A+/A/B+/B/C/P pass regardless of marks
+    // (TUT-only subjects); F/FFF fail; null grade falls back to the 40% line.
+    private boolean isPassingMark(SubjectMark mark, double obtained, double max) {
+        String grade = mark.getGrade();
+        if (grade != null) {
+            return !isFailGrade(grade);
+        }
+        return obtained >= 0.4 * max;
     }
 
     // SGPA printed on the ledger SGPA line for the given semester, if any.
