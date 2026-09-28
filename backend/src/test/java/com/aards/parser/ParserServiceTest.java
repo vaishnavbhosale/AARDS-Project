@@ -116,6 +116,30 @@ class ParserServiceTest {
     }
 
     @Test
+    void extractSubjectNamesFromSePaperList() {
+        String text =
+                "S.E. (2024 Pattern (NEP 2020)) Paper List\n"
+                + "Semester: 3\n"
+                + "Code                    Paper Title\n"
+                + "CEF-241-AID             Community Engagement Project\n"
+                + "EEM-231-ETC             Engineering Economics & Applications\n"
+                + "MDM-221-ETC             Data Structures & Algorithms\n"
+                + "PCC-201-ETC             Electronics Circuits\n"
+                + "PCC-202-ETC             Engineering Mathematics-III\n"
+                // A student mark row starts with the same code: its numbers
+                // must never become a subject title.
+                + "PCC-201-ETC  P 024 * 033 --- --- --- --- 057  3  3  B+  7  21\n";
+        Map<String, String> names = parserService.extractSubjectNames(text);
+
+        assertEquals(5, names.size());
+        assertEquals("Community Engagement Project", names.get("CEF-241-AID"));
+        assertEquals("Engineering Economics & Applications", names.get("EEM-231-ETC"));
+        assertEquals("Data Structures & Algorithms", names.get("MDM-221-ETC"));
+        assertEquals("Electronics Circuits", names.get("PCC-201-ETC"));
+        assertEquals("Engineering Mathematics-III", names.get("PCC-202-ETC"));
+    }
+
+    @Test
     void parseSeNepLedgerText() {
         String text =
                 "PRN: 724289563  SEAT NO.: S500890065  NAME: BHAGAT ANUSHKA PRAMOD  Mother's Name :- REKHA\n"

@@ -16,4 +16,6 @@ public interface ResultRepository extends JpaRepository<Result, Long> {
 
     List<Result> findByAcademicSessionIdAndYearAndSemesterAndStudent_DepartmentId(
             Long sessionId, Integer year, Integer semester, Long departmentId);
+
+    boolean existsBySubjectId(Long subjectId);
 }

@@ -38,6 +38,12 @@ public class ParserService {
     // e.g. "101011- 1 PR 101011 Engineering Mechanics".
     private static final String SUBJECT_LIST_PATTERN =
             "^(\\d{6})(.*?)\\b\\1\\b\\s*(?:[-_]\\s*(?:\\d|PR|TW)\\s*|_\\s*(?:PR|TW)\\s*)*(.+)$";
+    // SE paper list: code + wide gap + title. e.g. "PCC-201-ETC    Electronics Circuits".
+    private static final String SE_SUBJECT_LIST_PATTERN =
+            "^([A-Z]{3}(?:-\\d{3}(?:-[A-Z]{2,3}|[A-Z])?|\\d{3}[A-Z]{2,3}))\\s{2,}(.+)$";
+    // Titles that look like mark data (grades, totals, separators) are not titles.
+    private static final Pattern MARK_LIKE_TITLE_REGEX =
+            Pattern.compile("---|\\*|\\b\\d{3}\\b");
     private static final String LIST_SEMESTER_PATTERN = "(?i)semester\\s*:\\s*(\\d+)";
 
     // PRN line is case-insensitive: FE uses "Seat No.", SE uses "SEAT NO.".
@@ -51,6 +57,7 @@ public class ParserService {
     private static final Pattern GRADE_REGEX = Pattern.compile("^" + GRADE_PATTERN + "$");
     private static final Pattern TOTAL_POINTS_REGEX = Pattern.compile(TOTAL_POINTS_PATTERN);
     private static final Pattern SUBJECT_LIST_REGEX = Pattern.compile(SUBJECT_LIST_PATTERN);
+    private static final Pattern SE_SUBJECT_LIST_REGEX = Pattern.compile(SE_SUBJECT_LIST_PATTERN);
     private static final Pattern LIST_SEMESTER_REGEX = Pattern.compile(LIST_SEMESTER_PATTERN);
 
     private final OcrService ocrService;
@@ -184,7 +191,9 @@ public class ParserService {
     }
 
     // Subject list from the ledger's first page: code ("101011-1") -> title
-    // ("Engineering Mechanics"). Header and non-matching lines are skipped.
+    // ("Engineering Mechanics"). Supports the FE repeated-code format and the
+    // SE paper-list format ("PCC-201-ETC    Electronics Circuits").
+    // Header lines, mark rows and non-matching lines are skipped.
     public Map<String, String> extractSubjectNames(String fullText) {
         Map<String, String> names = new LinkedHashMap<>();
         if (fullText == null) {
@@ -205,15 +214,28 @@ public class ParserService {
             if (lower.contains("code") && lower.contains("paper") && lower.contains("title")) {
                 continue;
             }
+            // FE shape first (repeated code), then the SE paper-list shape.
+            String key = null;
+            String title = null;
             Matcher m = SUBJECT_LIST_REGEX.matcher(line);
-            if (!m.matches()) {
+            if (m.matches()) {
+                title = m.group(3).trim();
+                key = m.group(1) + normalizeListSuffix(m.group(2));
+            } else {
+                Matcher se = SE_SUBJECT_LIST_REGEX.matcher(line);
+                if (se.matches()) {
+                    title = se.group(2).trim();
+                    key = se.group(1);
+                }
+            }
+            if (key == null || title == null || title.isEmpty()) {
                 continue;
             }
-            String title = m.group(3).trim();
-            if (title.isEmpty()) {
+            // Student mark rows start with the same code: never store their
+            // numbers ("P 024 * 033 --- ...") as a subject title.
+            if (MARK_LIKE_TITLE_REGEX.matcher(title).find()) {
                 continue;
             }
-            String key = m.group(1) + normalizeListSuffix(m.group(2));
             names.putIfAbsent(key, title);
         }
         log.info("Extracted {} subject names from list page (semester {})",

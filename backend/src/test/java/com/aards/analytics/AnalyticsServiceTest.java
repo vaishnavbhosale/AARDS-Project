@@ -99,6 +99,49 @@ class AnalyticsServiceTest {
     }
 
     @Test
+    void nullSgpaExcludedFromAverages() {
+        // ATKT ledger lines give null SGPA: avg/lowest must ignore them.
+        AcademicSession session = sessionRepository.save(AcademicSession.builder()
+                .name("2033-34").active(true).build());
+        Department dept = departmentRepository.save(Department.builder()
+                .name("Null Sgpa Dept").code("NSG").build());
+        Double[] sgpas = {8.0, 7.0, null};
+        for (int i = 0; i < 3; i++) {
+            Student student = studentRepository.save(Student.builder()
+                    .prn("NULLSG" + i)
+                    .rollNumber("N" + i)
+                    .fullName("Null Sgpa " + i)
+                    .departmentId(dept.getId())
+                    .currentYear(2)
+                    .currentSemester(3)
+                    .active(true)
+                    .build());
+            semesterResultRepository.save(SemesterResult.builder()
+                    .studentId(student.getId())
+                    .academicSessionId(session.getId())
+                    .year(2)
+                    .semester(3)
+                    .sgpa(sgpas[i])
+                    .backlogCount(i == 2 ? 1 : 0)
+                    .status(i == 2 ? SemesterStatus.FAIL : SemesterStatus.PASS)
+                    .build());
+        }
+
+        AnalyticsFilterRequest filter = AnalyticsFilterRequest.builder()
+                .academicSessionId(session.getId())
+                .departmentId(dept.getId())
+                .year(2)
+                .semester(3)
+                .build();
+        DashboardResponse response = analyticsService.getDashboard(filter, null);
+
+        assertEquals(3, response.getCards().getTotalStudents());
+        assertEquals(7.5, response.getCards().getAverageSgpa());
+        assertEquals(7.0, response.getCards().getLowestSgpa());
+        assertEquals(8.0, response.getCards().getHighestSgpa());
+    }
+
+    @Test
     void hodIsLockedToOwnDepartment() {
         // ENTC has data, COMP does not matter here: the HOD asks for COMP
         // but must get ENTC numbers back.

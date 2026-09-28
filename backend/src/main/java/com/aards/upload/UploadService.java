@@ -340,10 +340,12 @@ public class UploadService {
         }
         studentRepository.saveAll(work.stream().map(w -> w.student).toList());
 
-        // 2. Subjects: load the whole department once, create missing in memory.
+        // 2. Subjects: load the whole department once, keyed by code.
+        // A subject is one row per (code, department): year/semester come
+        // from the record, defaults fill the rest.
         Map<String, Subject> subjectsByKey = new HashMap<>();
         for (Subject s : subjectRepository.findByDepartmentId(departmentId)) {
-            subjectsByKey.put(subjectKey(s.getCode(), s.getYear(), s.getSemester()), s);
+            subjectsByKey.putIfAbsent(s.getCode(), s);
         }
         List<Subject> newSubjects = new ArrayList<>();
         for (RecordWork w : work) {
@@ -351,7 +353,7 @@ public class UploadService {
                 int sem = entry.getKey();
                 int year = (sem + 1) / 2;
                 for (SubjectMark mark : entry.getValue()) {
-                    String key = subjectKey(mark.getSubjectCode(), year, sem);
+                    String key = mark.getSubjectCode();
                     Subject subject = subjectsByKey.get(key);
                     if (subject == null) {
                         subject = Subject.builder()
@@ -360,9 +362,9 @@ public class UploadService {
                                 .departmentId(departmentId)
                                 .year(year)
                                 .semester(sem)
-                                .maxMarks(mark.getMaxMarks() == null ? 100 : mark.getMaxMarks().intValue())
-                                .passingMarks((int) ((mark.getMaxMarks() == null ? 100 : mark.getMaxMarks()) * 0.4))
-                                .credits(4)
+                                .credits(3)
+                                .maxMarks(100)
+                                .passingMarks(40)
                                 .build();
                         subjectsByKey.put(key, subject);
                         newSubjects.add(subject);
@@ -388,8 +390,7 @@ public class UploadService {
                 int year = (sem + 1) / 2;
                 int backlogs = 0;
                 for (SubjectMark mark : entry.getValue()) {
-                    Subject subject = subjectsByKey.get(
-                            subjectKey(mark.getSubjectCode(), year, sem));
+                    Subject subject = subjectsByKey.get(mark.getSubjectCode());
                     double obtained = mark.getMarksObtained() == null ? 0 : mark.getMarksObtained();
                     double max = mark.getMaxMarks() == null ? 100 : mark.getMaxMarks();
                     boolean pass = obtained >= 0.4 * max;
@@ -457,6 +458,17 @@ public class UploadService {
             }
         }
         semesterResultRepository.saveAll(semesterResults);
+
+        // Cleanup: drop auto-created subjects nobody references. Seeded demo
+        // rows are never touched.
+        List<Subject> orphans = subjectRepository.findByDepartmentId(departmentId).stream()
+                .filter(s -> !Boolean.TRUE.equals(s.getSeeded()))
+                .filter(s -> !resultRepository.existsBySubjectId(s.getId()))
+                .toList();
+        if (!orphans.isEmpty()) {
+            subjectRepository.deleteAll(orphans);
+            log.info("Cleaned up {} unused subjects", orphans.size());
+        }
         log.info("Saved {} student records with results", records.size());
     }
 
@@ -466,11 +478,6 @@ public class UploadService {
         Student student;
         final Map<Integer, List<SubjectMark>> bySemester = new LinkedHashMap<>();
         final Map<Integer, Integer> backlogsBySemester = new LinkedHashMap<>();
-    }
-
-    // Map key for one subject in one semester.
-    private static String subjectKey(String code, Integer year, Integer semester) {
-        return code + "|" + year + "|" + semester;
     }
 
     // F and FFF mean the student failed that subject.

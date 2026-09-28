@@ -114,19 +114,14 @@ public class DataSeeder implements CommandLineRunner {
         }
     }
 
-    // Sample year 2 / semester 3 subjects for COMP and ENTC.
+    // Demo subjects for COMP only (FE ledger shape). SE subjects are never
+    // seeded: real uploads auto-create them from the PDF paper list.
     private void seedSubjects(Map<String, Department> departments) {
         Department comp = departments.get("COMP");
         if (comp != null) {
             seedOneSubject(comp, "CS201", "Data Structures", 4, 2, 3);
             seedOneSubject(comp, "CS202", "DBMS", 4, 2, 3);
             seedOneSubject(comp, "CS203", "EMFT", 3, 2, 3);
-        }
-        Department entc = departments.get("ENTC");
-        if (entc != null) {
-            seedOneSubject(entc, "EC201", "Signals and Systems", 4, 2, 3);
-            seedOneSubject(entc, "EC202", "Digital Circuits", 3, 2, 3);
-            seedOneSubject(entc, "EC203", "Network Theory", 4, 2, 3);
         }
     }
 
@@ -144,6 +139,7 @@ public class DataSeeder implements CommandLineRunner {
                     .credits(credits)
                     .maxMarks(100)
                     .passingMarks(40)
+                    .seeded(true)
                     .build());
             log.info("Seeded subject: {} for dept {}", subject.getCode(), dept.getCode());
         }

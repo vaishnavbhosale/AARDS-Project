@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -101,10 +102,13 @@ public class AnalyticsService {
         // f. Pass % (guard divide by zero).
         double passPct = round2(safeDivide(passed * 100.0, total));
 
-        // g-i. SGPA stats.
-        double avg = round2(rows.stream().mapToDouble(r -> r.getSgpa() == null ? 0 : r.getSgpa()).average().orElse(0));
+        // g-i. SGPA stats. ATKT rows have null SGPA: average and lowest use
+        // real values only (null would drag them to 0). Highest is unchanged.
+        double avg = round2(rows.stream().map(SemesterResult::getSgpa)
+                .filter(Objects::nonNull).mapToDouble(Double::doubleValue).average().orElse(0));
         double highest = round2(rows.stream().mapToDouble(r -> r.getSgpa() == null ? 0 : r.getSgpa()).max().orElse(0));
-        double lowest = round2(rows.stream().mapToDouble(r -> r.getSgpa() == null ? 0 : r.getSgpa()).min().orElse(0));
+        double lowest = round2(rows.stream().map(SemesterResult::getSgpa)
+                .filter(Objects::nonNull).mapToDouble(Double::doubleValue).min().orElse(0));
 
         // j-l. Backlog buckets.
         long b1 = rows.stream().filter(r -> r.getBacklogCount() != null && r.getBacklogCount() == 1).count();

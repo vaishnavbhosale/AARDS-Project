@@ -49,6 +49,11 @@ public class Subject {
     @Column(name = "passing_marks")
     private Integer passingMarks;
 
+    // True for DataSeeder demo rows. Upload cleanup only deletes unseeded
+    // subjects with zero results. Nullable for safe migration of old rows.
+    @Builder.Default
+    private Boolean seeded = false;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

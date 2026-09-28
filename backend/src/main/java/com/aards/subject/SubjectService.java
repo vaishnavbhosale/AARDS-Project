@@ -31,6 +31,7 @@ public class SubjectService {
                 .credits(request.getCredits() == null ? 4 : request.getCredits())
                 .maxMarks(request.getMaxMarks() == null ? 100 : request.getMaxMarks())
                 .passingMarks(request.getPassingMarks() == null ? 40 : request.getPassingMarks())
+                .seeded(true)
                 .build());
         log.info("Subject created with id: {}", saved.getId());
         return toResponse(saved);
