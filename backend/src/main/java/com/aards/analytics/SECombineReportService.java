@@ -364,22 +364,35 @@ public class SECombineReportService {
             Set<Long> onRoll = new HashSet<>();
             Set<Long> appeared = new HashSet<>();
             Set<Long> passed = new HashSet<>();
+            // Best percentage per passing student: bands count students, never rows.
+            Map<Long, Double> bestPctByStudent = new HashMap<>();
             long dist = 0, first = 0, hsc = 0, sc = 0, pass = 0;
             Double highest = null;
+            double max = subject.getMaxMarks() == null || subject.getMaxMarks() == 0
+                    ? 100 : subject.getMaxMarks();
             for (Result r : subjectRows) {
                 onRoll.add(r.getStudent().getId());
                 if (r.getStatus() == ResultStatus.ABSENT) {
                     continue;
                 }
                 appeared.add(r.getStudent().getId());
+                double marks = r.getMarksObtained() == null ? 0 : r.getMarksObtained();
                 if (r.getStatus() == ResultStatus.PASS) {
                     passed.add(r.getStudent().getId());
+                    // Bands run on percentage: some subjects are out of 50 or 25.
+                    double pctMarks = marks / max * 100;
+                    bestPctByStudent.merge(r.getStudent().getId(), pctMarks, Math::max);
                 }
-                // Bands run on percentage: some subjects are out of 50 or 25.
-                double max = subject.getMaxMarks() == null || subject.getMaxMarks() == 0
-                        ? 100 : subject.getMaxMarks();
-                double marks = r.getMarksObtained() == null ? 0 : r.getMarksObtained();
-                double pctMarks = marks / max * 100;
+                if (highest == null || marks > highest) {
+                    highest = marks;
+                }
+            }
+            // Exactly one band per passing student. FAIL rows never enter the
+            // bands (a failed component minimum with a high total used to leak
+            // in and push the band sum above Passed). A passing grade below
+            // 40% (grace/practical rows scaled to maxMarks) still belongs to
+            // exactly one band: Pass Class, the lowest passing class.
+            for (double pctMarks : bestPctByStudent.values()) {
                 if (pctMarks >= 65) {
                     dist++;
                 } else if (pctMarks >= 60) {
@@ -388,11 +401,8 @@ public class SECombineReportService {
                     hsc++;
                 } else if (pctMarks >= 50) {
                     sc++;
-                } else if (pctMarks >= 40) {
+                } else {
                     pass++;
-                }
-                if (highest == null || marks > highest) {
-                    highest = marks;
                 }
             }
             String facultyName = subjectFacultyRepository

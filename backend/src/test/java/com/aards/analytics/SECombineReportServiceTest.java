@@ -267,8 +267,10 @@ class SECombineReportServiceTest {
         assertEquals(6, rows.get(2).getAppeared());
         assertEquals(6, rows.get(2).getPassed());
         assertEquals(100.0, rows.get(2).getPassingPercentage());
-        assertEquals(2, rows.get(2).getDistinction());
-        assertEquals(7, rows.get(2).getFirstClass());
+        // One band per passing student: s9's two rows (70, 71) yield a single
+        // Distinction and s8's three rows (60, 61, 62) a single First Class.
+        assertEquals(1, rows.get(2).getDistinction());
+        assertEquals(5, rows.get(2).getFirstClass());
         assertEquals("SE204", rows.get(3).getSubjectCode());
         assertEquals(3, rows.get(3).getOnRoll());
         assertEquals(3, rows.get(3).getAppeared());
@@ -405,5 +407,96 @@ class SECombineReportServiceTest {
         assertEquals(appeared, row.isAppeared());
         assertEquals(finalStatus, row.getFinalClassification());
         assertEquals(fallbackUsed, row.isFallbackUsed());
+    }
+
+    // Subject grade bands count passing students exactly once: FAIL rows with
+    // high totals stay out (the old row loop leaked them in), ABSENT rows
+    // stay out, sub-40% passes land in Pass Class, and duplicate PASS rows
+    // for one student yield a single band. Sum of bands == passed, always.
+    @Test
+    void subjectBandsEqualPassed() {
+        AcademicSession session = sessionRepository.save(AcademicSession.builder()
+                .name("2037-38").active(true).build());
+        Department dept = departmentRepository.save(Department.builder()
+                .name("Band Dept").code("BND").build());
+        Subject sb1 = subjectRepository.save(Subject.builder()
+                .code("SB1").name("Band Subject Hundred")
+                .departmentId(dept.getId()).year(2).semester(3)
+                .credits(3).maxMarks(100).passingMarks(40).build());
+        Subject sb2 = subjectRepository.save(Subject.builder()
+                .code("SB2").name("Band Subject Fifty")
+                .departmentId(dept.getId()).year(2).semester(3)
+                .credits(2).maxMarks(50).passingMarks(20).build());
+
+        Student a = addStudent("SBB300", "Band A", dept.getId(), session, null, null);
+        addResult(a, sb1, session, 70, "A", ResultStatus.PASS);
+        Student b = addStudent("SBB301", "Band B", dept.getId(), session, null, null);
+        addResult(b, sb1, session, 62, "B+", ResultStatus.PASS);
+        Student c = addStudent("SBB302", "Band C", dept.getId(), session, null, null);
+        addResult(c, sb1, session, 57, "B", ResultStatus.PASS);
+        Student d = addStudent("SBB303", "Band D", dept.getId(), session, null, null);
+        addResult(d, sb1, session, 52, "C", ResultStatus.PASS);
+        Student e = addStudent("SBB304", "Band E", dept.getId(), session, null, null);
+        addResult(e, sb1, session, 45, "P", ResultStatus.PASS);
+        // Passing grade below 40%: still exactly one band (Pass Class).
+        Student f = addStudent("SBB305", "Band F", dept.getId(), session, null, null);
+        addResult(f, sb1, session, 30, "P", ResultStatus.PASS);
+        // FAIL rows, even with high totals, never enter the bands.
+        Student g = addStudent("SBB306", "Band G", dept.getId(), session, null, null);
+        addResult(g, sb1, session, 80, "F", ResultStatus.FAIL);
+        Student h = addStudent("SBB307", "Band H", dept.getId(), session, null, null);
+        addResult(h, sb1, session, 45, "F", ResultStatus.FAIL);
+        Student i = addStudent("SBB308", "Band I", dept.getId(), session, null, null);
+        addResult(i, sb1, session, 0, null, ResultStatus.ABSENT);
+        // Two PASS rows for one student: a single band (best percentage).
+        Student j = addStudent("SBB309", "Band J", dept.getId(), session, null, null);
+        addResult(j, sb1, session, 70, "A", ResultStatus.PASS);
+        addResult(j, sb1, session, 75, "A+", ResultStatus.PASS);
+
+        // Second subject with its own maxMarks: 46/50 Distinction,
+        // 19/50 Pass Class residual, 30/50 FAIL excluded.
+        Student k = addStudent("SBB310", "Band K", dept.getId(), session, null, null);
+        addResult(k, sb2, session, 46, "A+", ResultStatus.PASS);
+        Student l = addStudent("SBB311", "Band L", dept.getId(), session, null, null);
+        addResult(l, sb2, session, 19, "P", ResultStatus.PASS);
+        Student m = addStudent("SBB312", "Band M", dept.getId(), session, null, null);
+        addResult(m, sb2, session, 30, "F", ResultStatus.FAIL);
+
+        AnalyticsFilterRequest filter = AnalyticsFilterRequest.builder()
+                .academicSessionId(session.getId())
+                .departmentId(dept.getId())
+                .year(2)
+                .semester(3)
+                .build();
+        SECombineReportResponse response = seCombineReportService.generateSECombineReport(filter);
+
+        List<SECombineReportResponse.SubjectRow> subjectRows = response.getSemesters().stream()
+                .flatMap(block -> block.getSubjects().stream()).toList();
+        assertEquals(2, subjectRows.size());
+        for (SECombineReportResponse.SubjectRow row : subjectRows) {
+            long bands = row.getDistinction() + row.getFirstClass() + row.getHigherSecond()
+                    + row.getSecondClass() + row.getPassClass();
+            assertEquals(row.getPassed(), bands,
+                    "band sum must equal passed for " + row.getSubjectCode());
+        }
+
+        SECombineReportResponse.SubjectRow sb1Row = subjectRows.stream()
+                .filter(r -> r.getSubjectCode().equals("SB1")).findFirst().orElseThrow();
+        assertEquals(10, sb1Row.getOnRoll());
+        assertEquals(9, sb1Row.getAppeared());
+        assertEquals(7, sb1Row.getPassed());
+        assertEquals(2, sb1Row.getDistinction());
+        assertEquals(1, sb1Row.getFirstClass());
+        assertEquals(1, sb1Row.getHigherSecond());
+        assertEquals(1, sb1Row.getSecondClass());
+        assertEquals(2, sb1Row.getPassClass());
+
+        SECombineReportResponse.SubjectRow sb2Row = subjectRows.stream()
+                .filter(r -> r.getSubjectCode().equals("SB2")).findFirst().orElseThrow();
+        assertEquals(3, sb2Row.getOnRoll());
+        assertEquals(3, sb2Row.getAppeared());
+        assertEquals(2, sb2Row.getPassed());
+        assertEquals(1, sb2Row.getDistinction());
+        assertEquals(1, sb2Row.getPassClass());
     }
 }
